@@ -14,7 +14,7 @@ public class ConfessionReportRequestDto {
     private Long confessionId;
 
     @NotBlank(message = "Reason must not be blank")
-    private String reason; // 🔁 redenumit pentru consistență
+    private String reason; // renamed for consistency
 
     private String description;
     private String severity;

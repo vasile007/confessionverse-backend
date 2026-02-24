@@ -32,7 +32,7 @@ public class CustomUserDetails implements UserDetails {
         return user.getEmail();
     }
 
-    // Opțional, poți returna true sau poți adăuga câmpuri în UserEntity pentru asta:
+    // Optional: you can return true or add fields in UserEntity for this:
     @Override
     public boolean isAccountNonExpired() { return true; }
     @Override

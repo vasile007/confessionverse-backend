@@ -36,15 +36,15 @@ public class ConfessionController {
     private final UserService userService;
     private final ConfessionService confessionService;
 
-    // ✅ 1. Endpoint PUBLIC - returnează toate confesiunile (anonim)
+    // 1. PUBLIC endpoint - returns all confessions (anonymous)
     @GetMapping("/public")
     public ResponseEntity<List<ConfessionResponseDTO>> getAllPublicConfessions() {
         List<Confession> confessions = confessionRepository.findAllPublicWithUserOrderByCreatedAtDesc();
 
-        // Ascundem informațiile despre user (păstrăm anonimatul)
+        // Hide user information (preserve anonymity)
         List<ConfessionResponseDTO> response = confessions.stream()
                 .map(mapper::toConfessionResponseDTO)
-                .peek(dto -> dto.setAuthor("Anonim"))
+                .peek(dto -> dto.setAuthor("Anonymous"))
                 .toList();
 
         return ResponseEntity.ok(response);
@@ -60,7 +60,7 @@ public class ConfessionController {
         return ResponseEntity.ok(confessionService.getPublicConfessionsByUsername(username));
     }
 
-    // ✅ 2. Creare confesiune - doar user autentificat
+    // 2. Create confession - authenticated user only
     @PostMapping
     @PreAuthorize("hasRole('USER') or hasRole('ADMIN')")
     public ResponseEntity<ConfessionResponseDTO> createConfession(
@@ -79,7 +79,7 @@ public class ConfessionController {
         Confession confession = mapper.toEntity(request, user);
         confessionRepository.save(confession);
         ConfessionResponseDTO response = mapper.toConfessionResponseDTO(confession);
-        response.setAuthor("Anonim"); // anonimizăm
+        response.setAuthor("Anonymous"); // anonymize
 
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
@@ -100,13 +100,13 @@ public class ConfessionController {
 
         List<ConfessionResponseDTO> response = confessions.stream()
                 .map(mapper::toConfessionResponseDTO)
-                .peek(dto -> dto.setAuthor("Tu")) // doar autorul vede că e a lui
+                .peek(dto -> dto.setAuthor("You")) // only the author sees it as theirs
                 .toList();
 
         return ResponseEntity.ok(response);
     }
 
-    // ✅ 4. Confesiune după ID - doar owner sau admin
+    // 4. Confession by ID - owner or admin only
     @GetMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN') or @ownershipUtil.checkOwnership(T(com.confessionverse.backend.model.Confession), #id, authentication.name)")
     public ResponseEntity<ConfessionResponseDTO> getConfessionById(
@@ -120,11 +120,11 @@ public class ConfessionController {
 
         Confession confession = optionalConfession.get();
         ConfessionResponseDTO dto = mapper.toConfessionResponseDTO(confession);
-        dto.setAuthor("Anonim");
+        dto.setAuthor("Anonymous");
         return ResponseEntity.ok(dto);
     }
 
-    // ✅ 5. Ștergere confesiune
+    // 5. Delete confession
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN') or @ownershipUtil.checkOwnership(T(com.confessionverse.backend.model.Confession), #id, authentication.name)")
     public ResponseEntity<?> deleteConfession(
@@ -142,7 +142,7 @@ public class ConfessionController {
         return ResponseEntity.ok().body("Deleted");
     }
 
-    // ✅ 6. Actualizare confesiune
+    // 6. Update confession
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN') or @ownershipUtil.checkOwnership(T(com.confessionverse.backend.model.Confession), #id, authentication.name)")
     public ResponseEntity<ConfessionResponseDTO> updateConfession(
@@ -159,7 +159,7 @@ public class ConfessionController {
         confessionRepository.save(existingConfession);
 
         ConfessionResponseDTO responseDTO = mapper.toConfessionResponseDTO(existingConfession);
-        responseDTO.setAuthor("Anonim");
+        responseDTO.setAuthor("Anonymous");
         return ResponseEntity.ok(responseDTO);
     }
 
@@ -168,7 +168,7 @@ public class ConfessionController {
         List<Confession> confessions = confessionRepository.findAllPublicWithUserOrderByCreatedAtDesc();
         List<ConfessionResponseDTO> response = confessions.stream()
                 .map(mapper::toConfessionResponseDTO)
-                .peek(dto -> dto.setAuthor("Anonim"))
+                .peek(dto -> dto.setAuthor("Anonymous"))
                 .toList();
         return ResponseEntity.ok(response);
     }

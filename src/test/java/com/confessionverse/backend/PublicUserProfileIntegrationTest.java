@@ -97,8 +97,8 @@ class PublicUserProfileIntegrationTest {
                 .andExpect(jsonPath("$[1].id").value(older.getId()))
                 .andExpect(jsonPath("$[0].username").value(targetUser.getUsername()))
                 .andExpect(jsonPath("$[1].username").value(targetUser.getUsername()))
-                .andExpect(jsonPath("$[0].author").value("Anonim"))
-                .andExpect(jsonPath("$[1].author").value("Anonim"))
+                .andExpect(jsonPath("$[0].author").value("Anonymous"))
+                .andExpect(jsonPath("$[1].author").value("Anonymous"))
                 .andExpect(jsonPath("$[0].premiumHighlight").value(false))
                 .andExpect(jsonPath("$[0].user.planType").value("FREE"))
                 .andExpect(jsonPath("$[1].owner.premium").value(false));

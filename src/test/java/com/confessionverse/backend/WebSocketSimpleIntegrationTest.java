@@ -32,7 +32,7 @@ public class WebSocketSimpleIntegrationTest {
 
         BlockingQueue<String> blockingQueue = new LinkedBlockingDeque<>();
 
-        // Conectare o singură dată
+        // Connect only once
         ListenableFuture<StompSession> futureSession = stompClient.connect(url, new WebSocketHttpHeaders(), new StompSessionHandlerAdapter() {});
         StompSession session = futureSession.get(5, TimeUnit.SECONDS);
 

@@ -17,7 +17,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     public void registerStompEndpoints(StompEndpointRegistry registry) {
         registry.addEndpoint("/ws")
                 .setAllowedOriginPatterns("*");
-             ///   .withSockJS(); // sau comentezi dacă nu vrei SockJS
+             ///   .withSockJS(); // or comment out if you do not want SockJS
     }
 
     @Override
@@ -30,8 +30,8 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     public void configureClientInboundChannel(ChannelRegistration registration) {
         registration.interceptors(webSocketAuthInterceptor);
 
-        // aici poți adăuga ChannelInterceptor, dacă vrei să interceptezi mesajele după conectare
-        // dar nu pentru validarea tokenului la handshake
+        // you can add a ChannelInterceptor here if you want to intercept messages after connection
+        // but not for token validation during handshake
     }
 }
 

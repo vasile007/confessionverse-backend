@@ -70,7 +70,7 @@ public class OwnershipUtil {
                 .orElse(false);
     }
 
-    // Recomand varianta aceasta, care e mai corectă și mai simplă:
+    // Recommended version: more correct and simpler
     public boolean isParticipantInChatRoom(Long chatRoomId, String email) {
         Long userId = userService.getUserIdByEmail(email);
         if (userId == null) {
@@ -125,7 +125,7 @@ public class OwnershipUtil {
         }
 
         if (entityClass.equals(ChatRoom.class)) {
-            // Verifică dacă user este participant sau creator în chatroom
+            // Check whether user is a participant or creator in the chatroom
             Optional<ChatRoom> optionalChatRoom = chatRoomRepository.findById(entityId);
             if (optionalChatRoom.isEmpty()) {
                 return false;
@@ -138,14 +138,14 @@ public class OwnershipUtil {
             return isCreator || isParticipant;
         }
 
-        // Daca entityClass nu este niciunul din cele de mai sus, return false
+        // If entityClass is none of the above, return false
         return false;
     }
 
     public boolean isVoteOwner(Long voteId, Authentication auth) {
         String username = auth.getName();
         return confessionVoteRepository.findById(voteId)
-                .map(v -> v.getVoterIp().equals(username)) // sau alt criteriu de ownership
+                .map(v -> v.getVoterIp().equals(username)) // or another ownership criterion
                 .orElse(false);
     }
 }

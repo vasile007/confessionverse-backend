@@ -35,11 +35,11 @@ public class SecurityConfigure {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-                // Dezactivează CSRF pentru POST JSON în development
+                // Disable CSRF for JSON POST in development
                 .csrf(csrf -> csrf.disable())
                 .cors(cors -> cors.configurationSource(request -> {
                     CorsConfiguration config = new CorsConfiguration();
-                    // React rulează pe portul 5173
+                    // React runs on port 5173
                     config.setAllowedOrigins(List.of("http://localhost:5173"));
                     config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
                     config.setAllowCredentials(true);
@@ -47,7 +47,7 @@ public class SecurityConfigure {
                     return config;
                 }))
                 .authorizeHttpRequests(auth -> auth
-                        // Login și register permitAll
+                        // Login and register are permitAll
                         .requestMatchers(
                                 "/api/auth/login",
                                 "/api/auth/register",
@@ -56,7 +56,7 @@ public class SecurityConfigure {
                         ).permitAll()
                         .requestMatchers("/api/billing/webhook").permitAll()
 
-                        // Swagger UI și API docs
+                        // Swagger UI and API docs
                         .requestMatchers("/swagger-ui/**",
                                 "/swagger-ui.html",
                                 "/v3/api-docs/**",

@@ -115,7 +115,7 @@ public class MessageService {
         }
 
         existing.setContent(dto.getContent());
-        // alte câmpuri editabile se setează aici
+        // other editable fields are set here
 
         Message saved = messageRepository.save(existing);
         return mapper.toResponseDTO(saved);

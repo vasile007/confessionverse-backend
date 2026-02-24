@@ -129,7 +129,7 @@ public class UserController {
 
     /*
 
-    ///  pentru poze la avatar pe viitor !!!
+    /// for avatar images in the future !!!
     @PostMapping("/me/avatar")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<?> uploadAvatar(
@@ -139,7 +139,7 @@ public class UserController {
         String username = authentication.getName();
         User user = userService.getUserEntityByUsername(username);
 
-        // Ex: salvează în folderul avatars/
+        // Example: save in the avatars/ folder
         String fileName = UUID.randomUUID() + "_" + file.getOriginalFilename();
         Path uploadPath = Paths.get("uploads/avatars");
         Files.createDirectories(uploadPath);

@@ -3,9 +3,9 @@ package com.confessionverse.backend.security.ownership;
 import java.util.Optional;
 
 /**
- * Service generic pentru entități care pot fi "owned".
- * Implementatorul trebuie să returneze și clasa entității prin getEntityClass()
- * pentru a permite înregistrarea automată în OwnershipUtil.
+ * Generic service for entities that can be "owned".
+ * The implementer must also return the entity class via getEntityClass()
+ * to allow automatic registration in OwnershipUtil.
  */
 public interface OwnableService<T extends Ownable> {
    Optional <T> getById(Long id);

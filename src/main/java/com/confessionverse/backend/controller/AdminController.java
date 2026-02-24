@@ -9,13 +9,13 @@ import org.springframework.web.bind.annotation.*;
 @CrossOrigin(origins = "*")
 public class AdminController {
 
-    // Endpoint simplu pentru testare acces admin
+    // Simple endpoint for testing admin access
     @GetMapping("/secure")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<String> secureAdminAccess() {
         return ResponseEntity.ok("Access granted to ADMIN secure endpoint");
     }
 
-    // Poți adăuga și alte operații administrative aici
+    // You can add other administrative operations here
 }
 

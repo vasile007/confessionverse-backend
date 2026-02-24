@@ -61,17 +61,17 @@ public class ConfessionService implements OwnableService<Confession> {
     }
 
     public ConfessionDTO createConfession(ConfessionDTO dto, Long authenticatedUserId) {
-        // Obține user-ul autentificat
+        // Get the authenticated user
         User user = userRepository.findById(authenticatedUserId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found with id " + authenticatedUserId));
 
-        // Creează confession folosind mapper care setează user-ul
+        // Create confession using mapper that sets the user
         Confession confession = mapper.toEntity(dto, user);
 
-        // Salvează în baza de date
+        // Save to the database
         Confession saved = confessionRepository.save(confession);
 
-        // Returnează DTO
+        // Return DTO
         return mapper.toConfessionDTO(saved);
     }
 
@@ -81,7 +81,7 @@ public class ConfessionService implements OwnableService<Confession> {
 
         return confessionRepository.findByUserUsernameIgnoreCaseOrderByCreatedAtDesc(username).stream()
                 .map(mapper::toConfessionResponseDTO)
-                .peek(dto -> dto.setAuthor("Anonim"))
+                .peek(dto -> dto.setAuthor("Anonymous"))
                 .collect(Collectors.toList());
     }
 
@@ -90,7 +90,7 @@ public class ConfessionService implements OwnableService<Confession> {
         Confession existing = confessionRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Confession not found with id " + id));
         existing.setContent(dto.getContent());
-        // User update dacă e nevoie (sau ignorat)
+        // Update user if needed (or ignore)
         Confession updated = confessionRepository.save(existing);
         return mapper.toConfessionDTO(updated);
     }

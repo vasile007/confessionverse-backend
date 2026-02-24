@@ -38,7 +38,7 @@ public class WebSocketAuthInterceptor implements ChannelInterceptor {
                 return null;
             }
 
-            token = token.substring(7); // eliminam prefixul "Bearer "
+            token = token.substring(7); // remove the "Bearer " prefix
             if (!jwtUtil.validateToken(token)) {
                 return null;
             }

@@ -28,7 +28,7 @@ public class ConfessionReport  implements Ownable {
     @Column(name = "report_reason", nullable = false, length = 1000)
     private String reason;
 
-    @Column(name = "description", length = 2000)  // optional, poate să fie null
+    @Column(name = "description", length = 2000)  // optional, may be null
     private String description;
 
     @Column(name = "severity", length = 20)

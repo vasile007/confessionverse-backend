@@ -4,6 +4,6 @@ public enum BoostType {
     GOLD,
     SILVER,
     BRONZE
-    // Poți adăuga alte tipuri de boost dacă dorești
+    // You can add other boost types if needed
 }
 

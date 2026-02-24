@@ -50,7 +50,7 @@ public class ConfessionVoteService  implements OwnableService<ConfessionVote> {
             existingVote = confessionVoteRepository
                     .findByConfessionIdAndVoter(confessionId, voterUser);
         } else {
-            // 🟡 ANONIM → vot DOAR pe IP
+            // Anonymous -> vote only by IP
             if (voterIp == null || voterIp.isBlank()) {
                 throw new IllegalArgumentException("Missing voter IP");
             }
@@ -125,7 +125,7 @@ public class ConfessionVoteService  implements OwnableService<ConfessionVote> {
                 .build();
     }
 
-    // helper method să nu repeți codul
+    // helper method to avoid repeating code
     private VoteResponseDto buildVoteResponse(Long confessionId, String voterIp, VoteType voteType) {
         int likeCount = confessionVoteRepository.countByConfessionIdAndVoteType(confessionId, VoteType.LIKE);
         int dislikeCount = confessionVoteRepository.countByConfessionIdAndVoteType(confessionId, VoteType.DISLIKE);

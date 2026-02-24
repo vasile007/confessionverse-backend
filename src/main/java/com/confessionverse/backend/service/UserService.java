@@ -258,7 +258,7 @@ public class UserService implements OwnableService<User> {
 
     public User getCurrentUser() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        String email = authentication.getName(); // presupunem că aici este email-ul
+        String email = authentication.getName(); // we assume this contains the email
 
         return userRepository.findByEmail(email)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found with email " + email));
@@ -305,7 +305,7 @@ public class UserService implements OwnableService<User> {
         return userRepository.findByUsername(username)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
     }
-    // Metoda care returnează rolurile ca listă de string-uri
+    // Method that returns roles as a list of strings
     public List<String> getRolesByUsername(String username) {
         return userRepository.findByUsername(username)
                 .map(user -> Collections.singletonList("ROLE_" + user.getRole().name()))
@@ -339,18 +339,18 @@ public class UserService implements OwnableService<User> {
 
 
     public UserDTO updateUserByEmail(String email, UserProfileUpdateDTO dto) {
-        // Găsește user-ul după email
+        // Find the user by email
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found with email: " + email));
 
-        // Actualizează câmpurile
+        // Update fields
         user.setUsername(dto.getUsername());
         user.setEmail(dto.getEmail());
 
-        // Salvează user-ul în baza de date
+        // Save the user to the database
         userRepository.save(user);
 
-        // Transformă în DTO și returnează
+        // Convert to DTO and return
         return userDtoMapper.toUserDto(user);
     }
 

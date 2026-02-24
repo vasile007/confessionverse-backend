@@ -60,7 +60,7 @@ public class ConfessionReportController {
         return ResponseEntity.ok(dtos);
     }
 
-    // Eliminată metoda extractClientIp deoarece nu e folosită
+    // Removed extractClientIp method because it is unused
 
     @GetMapping
     @PreAuthorize("hasRole('ADMIN')")

@@ -20,7 +20,7 @@ public class Boost  implements Ownable {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
-    @Enumerated(EnumType.STRING)  // <-- important să salvezi enum ca string în DB
+    @Enumerated(EnumType.STRING)  // <-- important to store enum as string in DB
     private BoostType boostType;
 
     private LocalDateTime date;

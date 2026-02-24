@@ -41,8 +41,8 @@ import java.util.Arrays;
 import java.util.stream.Collectors;
 
 /**
- * Service pentru gestionarea logicii de business asociate ChatRoom-urilor.
- * Implementare OwnableService pentru integrarea cu sistemul de ownership.
+ * Service for handling business logic associated with ChatRooms.
+ * OwnableService implementation for integration with the ownership system.
  */
 @Service
 public class ChatRoomService implements OwnableService<ChatRoom> {
@@ -79,7 +79,7 @@ public class ChatRoomService implements OwnableService<ChatRoom> {
     }
 
     /**
-     * Obține toate chat room-urile ca listă de DTO-uri.
+     * Retrieves all chat rooms as a list of DTOs.
      */
     public List<ChatRoomDTO> getAllChatRooms() {
         return chatRoomRepository.findAll().stream()
@@ -88,8 +88,8 @@ public class ChatRoomService implements OwnableService<ChatRoom> {
     }
 
     /**
-     * Obține chat room după ID ca DTO.
-     * @throws ResourceNotFoundException dacă nu există chat room cu ID-ul dat.
+     * Retrieves a chat room by ID as a DTO.
+     * @throws ResourceNotFoundException if no chat room exists with the given ID.
      */
     public ChatRoomDTO getChatRoomById(Long id) {
         ChatRoom chatRoom = getChatRoomEntityById(id);
@@ -97,9 +97,9 @@ public class ChatRoomService implements OwnableService<ChatRoom> {
     }
 
     /**
-     * Creează un chat room nou din DTO-ul de request.
-     * Asociază participanții, setează createdAt la momentul actual.
-     * @throws ResourceNotFoundException dacă unul dintre userii participanți nu există.
+     * Creates a new chat room from the request DTO.
+     * Associates participants and sets createdAt to the current time.
+     * @throws ResourceNotFoundException if one of the participant users does not exist.
      */
     public ChatRoomDTO createChatRoom(ChatRoomRequestDTO chatRoomRequestDTO) {
         Set<User> participants = chatRoomRequestDTO.getParticipantIds().stream()
@@ -115,9 +115,9 @@ public class ChatRoomService implements OwnableService<ChatRoom> {
     }
 
     /**
-     * Actualizează un chat room existent cu noile date din DTO.
-     * Actualizează participanții și alte câmpuri dacă e cazul.
-     * @throws ResourceNotFoundException dacă chat room-ul sau userii participanți nu există.
+     * Updates an existing chat room with new data from the DTO.
+     * Updates participants and other fields when applicable.
+     * @throws ResourceNotFoundException if the chat room or participant users do not exist.
      */
     public ChatRoomDTO updateChatRoom(Long id, ChatRoomDTO dto) {
         ChatRoom existing = getChatRoomEntityById(id);
@@ -129,15 +129,15 @@ public class ChatRoomService implements OwnableService<ChatRoom> {
 
         existing.setParticipants(participants);
 
-        // TODO: actualizează și alte câmpuri ale chatRoom dacă există
+        // TODO: update other chatRoom fields if they exist
 
         ChatRoom updated = chatRoomRepository.save(existing);
         return mapper.toChatRoomDTO(updated);
     }
 
     /**
-     * Șterge chat room-ul după ID.
-     * @throws ResourceNotFoundException dacă chat room-ul nu există.
+     * Deletes a chat room by ID.
+     * @throws ResourceNotFoundException if the chat room does not exist.
      */
     public void deleteChatRoom(Long id) {
         if (!chatRoomRepository.existsById(id)) {
@@ -147,10 +147,10 @@ public class ChatRoomService implements OwnableService<ChatRoom> {
     }
 
     /**
-     * Obține sau creează o cameră privată între doi utilizatori după username.
-     * Caută o cameră cu exact acești doi participanți, indiferent de ordinea lor.
-     * Dacă nu există, creează una nouă.
-     * @throws ResourceNotFoundException dacă oricare dintre utilizatori nu există.
+     * Gets or creates a private room between two users by username.
+     * Looks for a room with exactly these two participants, regardless of order.
+     * If it does not exist, creates a new one.
+     * @throws ResourceNotFoundException if either user does not exist.
      */
     public ChatRoom getOrCreatePrivateRoomByEmails(String email1, String email2) {
         User user1 = userRepository.findByEmail(email1)
@@ -169,7 +169,7 @@ public class ChatRoomService implements OwnableService<ChatRoom> {
     }
 
     /**
-     * Obține entitatea ChatRoom după ID sau aruncă excepție dacă nu există.
+     * Retrieves the ChatRoom entity by ID or throws if it does not exist.
      */
     public ChatRoom getChatRoomEntityById(Long id) {
         return chatRoomRepository.findById(id)
@@ -177,8 +177,8 @@ public class ChatRoomService implements OwnableService<ChatRoom> {
     }
 
     /**
-     * Verifică dacă un user este participant într-un chat room.
-     * @return true dacă utilizatorul este participant, false altfel.
+     * Checks whether a user is a participant in a chat room.
+     * @return true if the user is a participant, false otherwise.
      */
     public boolean isUserParticipant(Long chatRoomId, String username) {
         Optional<ChatRoom> chatRoomOpt = chatRoomRepository.findById(chatRoomId);
@@ -189,7 +189,7 @@ public class ChatRoomService implements OwnableService<ChatRoom> {
     }
 
     /**
-     * Implementarea metodei din OwnableService pentru obținerea entității după id.
+     * OwnableService method implementation for retrieving the entity by id.
      */
     @Override
     public Optional<ChatRoom> getById(Long id) {
@@ -197,7 +197,7 @@ public class ChatRoomService implements OwnableService<ChatRoom> {
     }
 
     /**
-     * Implementarea metodei din OwnableService pentru a returna clasa entității.
+     * OwnableService method implementation for returning the entity class.
      */
     @Override
     public Class<ChatRoom> getEntityClass() {

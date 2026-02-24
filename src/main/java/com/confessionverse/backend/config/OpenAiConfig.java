@@ -16,7 +16,7 @@ public class OpenAiConfig {
     @Bean
     public RestClient openAiRestClient(RestClient.Builder builder) {
         return builder
-                .baseUrl("https://api.openai.com/v1") // DOAR "/chat/completions" se pune în .uri(...) în apel
+                .baseUrl("https://api.openai.com/v1") // ONLY "/chat/completions" should be passed in .uri(...) at call site
                 .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + apiKey)
                 .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
                 .build();

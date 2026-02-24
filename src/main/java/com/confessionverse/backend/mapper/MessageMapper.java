@@ -18,7 +18,7 @@ public class MessageMapper {
 
         Message message = new Message();
         message.setContent(dto.getContent());
-        // chatRoom and sender trebuie setate separat în service, nu din DTO direct
+        // chatRoom and sender must be set separately in the service, not directly from the DTO
         return message;
     }
 

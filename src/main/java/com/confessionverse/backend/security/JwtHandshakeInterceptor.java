@@ -13,7 +13,7 @@ import java.util.Map;
 
 public class JwtHandshakeInterceptor implements HandshakeInterceptor {
 
-    private final JwtUtil jwtUtil = new JwtUtil(); // direct new, dacă nu vrei să-l injectezi
+    private final JwtUtil jwtUtil = new JwtUtil(); // direct new if you do not want to inject it
 
     @Override
     public boolean beforeHandshake(ServerHttpRequest request,
@@ -21,7 +21,7 @@ public class JwtHandshakeInterceptor implements HandshakeInterceptor {
                                    WebSocketHandler wsHandler,
                                    Map<String, Object> attributes) throws Exception {
         System.out.println("Handshake primit");
-        return true; // 🔁 Permite orice conexiune fără validare token
+        return true; // Allow any connection without token validation
     }
 
   /*

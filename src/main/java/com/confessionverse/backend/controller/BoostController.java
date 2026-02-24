@@ -35,7 +35,7 @@ public class BoostController  {
     private final OwnershipUtil ownershipUtil;
 
 
-    private final UserService userService;  // Pentru user info în verificări
+    private final UserService userService;  // For user info during checks
 
     @GetMapping
     @PreAuthorize("hasAnyRole('USER', 'ADMIN')")
@@ -60,7 +60,7 @@ public class BoostController  {
     public ResponseEntity<?> createBoost(@Valid @RequestBody BoostRequestDTO dto, Authentication authentication) {
         String currentEmail = authentication.getName();
 
-        // Verifică dacă user-ul din token e cel care creează boost-ul sau admin
+        // Check whether the user from the token is creating the boost or is admin
         if (!ownershipUtil.isAdmin(currentEmail) && !userOwnsBoost(dto.getUserId(), currentEmail)) {
             return ResponseEntity.status(403).build();
         }

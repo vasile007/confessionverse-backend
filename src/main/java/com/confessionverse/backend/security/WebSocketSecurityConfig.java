@@ -25,7 +25,7 @@ public class WebSocketSecurityConfig {
 
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-                // configurare securitate pentru websocket /messaging
+                // security configuration for websocket /messaging
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/ws/**").authenticated()
                         .anyRequest().permitAll()
@@ -35,7 +35,7 @@ public class WebSocketSecurityConfig {
         return http.build();
     }
 
-    // Filtru custom pentru WebSocket
+    // Custom filter for WebSocket
     public static class JwtWebSocketAuthenticationFilter extends OncePerRequestFilter {
 
         private final JwtUtil jwtUtil;
@@ -60,7 +60,7 @@ public class WebSocketSecurityConfig {
             if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
                 String role = jwtUtil.extractRole(token);
 
-                // Validăm tokenul cu rolul extras
+                // Validate token with extracted role
                 if (jwtUtil.validateTokenByRole(token, role)) {
                     UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
                             username,

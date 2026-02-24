@@ -43,7 +43,7 @@ public class EntityDtoMapper {
      //   user.setPasswordHash(dto.getPasswordHash());
         user.setRole(dto.getRole() == null ? null : Role.valueOf(dto.getRole()));
         user.setPremium(dto.getPremium());
-        // Relații nu setăm aici, se gestionează separat
+        // Relationships are not set here; they are handled separately
         return user;
     }
 
@@ -65,7 +65,7 @@ public class EntityDtoMapper {
         Confession c = new Confession();
         c.setId(dto.getId());
         c.setContent(dto.getContent());
-        // user se setează în serviciu/controller separat
+        // user is set separately in the service/controller
         return c;
     }
     public Confession toEntity(ConfessionRequestDTO dto, User user) {
@@ -80,7 +80,7 @@ public class EntityDtoMapper {
         dto.setId(confession.getId());
         dto.setContent(confession.getContent());
 
-        // 🔹 Adăugăm timestamp formatat frumos (dacă există)
+        // Add a nicely formatted timestamp (if present)
         if (confession.getCreatedAt() != null) {
             dto.setTimestamp(confession.getCreatedAt().toString());
         }
@@ -103,8 +103,8 @@ public class EntityDtoMapper {
         }
         dto.setHidden(Boolean.TRUE.equals(confession.getHidden()));
 
-        //  Autorul e mereu anonim pentru confesiunile publice
-        dto.setAuthor("Anonim");
+        // Author is always anonymous for public confessions
+        dto.setAuthor("Anonymous");
 
         return dto;
     }
@@ -147,7 +147,7 @@ public class EntityDtoMapper {
         if (dto.getRoomType() != null) {
             cr.setRoomType(ChatRoomType.valueOf(dto.getRoomType()));
         }
-        // participanții și mesajele se setează separat în serviciu/controller
+        // participants and messages are set separately in the service/controller
         return cr;
     }
 
@@ -157,7 +157,7 @@ public class EntityDtoMapper {
         Message m = new Message();
         m.setId(dto.getId());
         m.setContent(dto.getContent());
-        // chatRoom și sender se setează separat
+        // chatRoom and sender are set separately
         return m;
     }
 
@@ -180,7 +180,7 @@ public class EntityDtoMapper {
         s.setPlanType(dto.getPlanType());
         s.setStartDate(dto.getStartDate());
         s.setEndDate(dto.getEndDate());
-        // user se setează separat
+        // user is set separately
         return s;
     }
 
@@ -202,11 +202,11 @@ public class EntityDtoMapper {
         Boost b = new Boost();
         b.setId(dto.getId());
         b.setBoostType(dto.getBoostType() == null ? null : BoostType.valueOf(dto.getBoostType())); // String to enum
-        // user și confession se setează separat, la nevoie
+        // user and confession are set separately, when needed
         return b;
     }
 
-    // Conversie BoostRequestDTO + user + confession -> Boost entity (ex: când creezi boost nou)
+    // Conversion BoostRequestDTO + user + confession -> Boost entity (e.g., when creating a new boost)
     public Boost toEntity(BoostRequestDTO dto, User user, Confession confession) {
         if (dto == null) return null;
         Boost boost = new Boost();
@@ -217,7 +217,7 @@ public class EntityDtoMapper {
         return boost;
     }
 
-    // Conversie entity Boost -> BoostResponseDTO (pentru răspuns API)
+    // Conversion Boost entity -> BoostResponseDTO (for API response)
     public BoostResponseDTO toResponseDto(Boost boost) {
         if (boost == null) return null;
         return BoostResponseDTO.builder()
@@ -250,7 +250,7 @@ public class EntityDtoMapper {
         User user = new User();
         user.setUsername(dto.getUsername());
         user.setEmail(dto.getEmail());
-        user.setPasswordHash(dto.getPassword()); // hash în serviciu, aici doar setăm
+        user.setPasswordHash(dto.getPassword()); // hash in service; here we only assign
         user.setRole(dto.getRole() == null ? null : Role.valueOf(dto.getRole()));
         user.setPremium(dto.getPremium());
         return user;

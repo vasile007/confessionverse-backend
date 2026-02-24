@@ -94,14 +94,14 @@ public class ConfessionVoteController {
 
         User voterUser;
         try {
-            // încercăm email (JWT standard)
+            // try email (standard JWT)
             voterUser = userService.getUserEntityByEmail(authentication.getName());
         } catch (ResourceNotFoundException ex) {
             try {
-                // fallback username (dacă ai login pe username)
+                // username fallback (if login uses username)
                 voterUser = userService.getUserEntityByUsername(authentication.getName());
             } catch (ResourceNotFoundException ex2) {
-                // 🚨 authenticated dar nu există user → problemă de securitate
+                // authenticated but user does not exist -> security issue
                 log.error("Authenticated principal '{}' not mapped to User", authentication.getName());
                 return ResponseEntity.status(403).build();
             }
@@ -130,7 +130,6 @@ public class ConfessionVoteController {
     }
 
 }
-
 
 
 

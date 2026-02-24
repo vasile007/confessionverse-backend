@@ -73,7 +73,7 @@ public class BoostService implements OwnableService<Boost> {
                 .orElseThrow(() -> new ResourceNotFoundException("Boost not found with id " + id));
         existing.setBoostType(BoostType.valueOf(dto.getBoostType()));
         existing.setDate(dto.getDate());
-        // User și Confession pot rămâne la fel sau update dacă vrei
+        // User and Confession can remain the same, or be updated if needed
         Boost updated = boostRepository.save(existing);
         return mapper.toBoostDTO(updated);
     }

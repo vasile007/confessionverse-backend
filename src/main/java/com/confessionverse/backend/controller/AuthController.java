@@ -36,7 +36,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/auth")
 @Validated
-@CrossOrigin(origins = "http://localhost:5173") // ← aici se permite React
+@CrossOrigin(origins = "http://localhost:5173") // React is allowed here
 public class AuthController {
 
     private final PasswordEncoder passwordEncoder;
@@ -104,7 +104,7 @@ public class AuthController {
     @PostMapping("/register")
     public ResponseEntity<?> register( @RequestBody @Valid RegisterRequest request, BindingResult bindingResult) {
         if (bindingResult.hasErrors()) {
-            // ✅ Afișăm requestul și erorile de validare în consolă
+            // Log the request and validation errors in the console
             System.out.println("Received register request: " + request);
             System.out.println("Validation errors: " + bindingResult.getAllErrors());
 
@@ -168,7 +168,7 @@ public class AuthController {
 
         return userRepository.findById(id)
                 .map(user -> {
-                    // Permite ștergerea dacă userul este admin sau este chiar userul curent
+                    // Allow deletion if the user is admin or the current user
                     if (currentUser.getRole() == Role.ADMIN || currentUser.getId().equals(user.getId())) {
                         userRepository.delete(user);
                         return ResponseEntity.ok(Map.of("message", "User deleted successfully"));
@@ -188,10 +188,10 @@ public class AuthController {
 
         return userRepository.findById(id)
                 .map(user -> {
-                    // Permite update dacă e admin sau user-ul curent
+                    // Allow update if admin or the current user
                     if (currentUser.getRole() == Role.ADMIN || currentUser.getId().equals(user.getId())) {
 
-                        // Validare unicitate username/email dacă se schimbă
+                        // Validate username/email uniqueness if changed
                         if (!user.getUsername().equals(userDTO.getUsername()) && userRepository.existsByUsername(userDTO.getUsername())) {
                             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", "Username already exists"));
                         }
@@ -199,10 +199,10 @@ public class AuthController {
                             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", "Email already exists"));
                         }
 
-                        // Actualizare câmpuri (poți adapta după ce vrei să actualizezi)
+                        // Update fields (adapt based on what you want to update)
                         user.setUsername(userDTO.getUsername());
                         user.setEmail(userDTO.getEmail());
-                        // Dacă vrei să permiți schimbarea parolei, fă endpoint separat cu validare + hash
+                        // If you want to allow password changes, create a separate endpoint with validation + hash
 
                         userRepository.save(user);
 

@@ -13,7 +13,7 @@ public class JwtKeyGenerator {
         String base64Key = Base64.getEncoder().encodeToString(key.getEncoded());
         System.out.println("Generated Base64 Secret Key: " + base64Key);
 
-      //// System.out.println(new BCryptPasswordEncoder().encode("parola ta pentru a deveni hash"));
+      //// System.out.println(new BCryptPasswordEncoder().encode("your password to be hashed"));
 
     }
 

@@ -15,6 +15,6 @@ public class BoostRequestDTO {
     private Long userId;
 
     @NotNull(message = "Boost type is required")
-    private String boostType;  // Sau BoostType dacă folosești direct enumul
+    private String boostType;  // Or BoostType if you use the enum directly
 }
 

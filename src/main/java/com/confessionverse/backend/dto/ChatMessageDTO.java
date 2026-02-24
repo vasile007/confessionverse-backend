@@ -23,8 +23,8 @@ public class ChatMessageDTO {
     @NotBlank(message = "Chat room ID is required")
     private String chatRoomId;
 
-    private String timestamp; // e.g., ISO-8601 string generat în backend sau frontend
+    private String timestamp; // e.g., ISO-8601 string generated in backend or frontend
 
-    private String receiver; // pentru mesaje private, opțional
+    private String receiver; // for private messages, optional
 }
 

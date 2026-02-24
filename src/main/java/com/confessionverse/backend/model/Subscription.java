@@ -47,7 +47,7 @@ public class Subscription implements Ownable {
     private LocalDateTime updatedAt;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "subscriber_id") // numele coloanei poate fi diferit, vezi schema ta DB
+    @JoinColumn(name = "subscriber_id") // column name may differ; check your DB schema
     private User subscriber;
 
 
