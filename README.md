@@ -1,6 +1,8 @@
 ConfessionVerse Backend
 
-Production-ready Spring Boot backend running in Docker on AWS EC2.
+Production-ready Spring Boot backend deployed in Docker on AWS EC2.
+
+This backend powers the ConfessionVerse platform, handling authentication, AI integration, billing, real-time features, and database operations.
 
 🚀 Tech Stack
 
@@ -14,28 +16,29 @@ Docker
 
 AWS EC2
 
-Stripe (billing)
+Stripe (Billing)
 
 OpenAI API
 
-SMTP (email)
+SMTP (Email Service)
 
-📦 Production Architecture (Current Setup)
+🏗 Production Architecture (Current Setup)
 
-Single EC2 instance:
+Single EC2 instance architecture:
 
 EC2
- ├── Docker
- │    └── confessionverse-backend (container)
- ├── MySQL (local)
- └── Daily automated database backups (cron)
+├── Docker
+│ └── confessionverse-backend (container)
+├── MySQL (local instance)
+└── Automated daily database backups (cron)
 
-Backend runs inside Docker with environment-based configuration.
+The backend runs inside Docker with environment-based configuration.
+Secrets are not stored in source control.
 
 🐳 Docker Setup
-Build image
+Build Image
 docker build -t confessionverse-backend .
-Run container
+Run Container
 docker run -d \
   --name confessionverse-backend \
   --network host \
@@ -43,11 +46,17 @@ docker run -d \
   --restart unless-stopped \
   confessionverse-backend
 
-Container restarts automatically after server reboot.
+Container is configured with:
+
+Automatic restart on failure
+
+Automatic restart after server reboot
+
+Environment-based secret injection
 
 🔐 Environment Variables
 
-Production secrets are stored in a .env file on the server.
+Production secrets are stored only in a server-side .env file.
 
 Example .env.example:
 
@@ -68,11 +77,14 @@ SMTP_FROM=
 
 🗄 Database
 
-MySQL runs locally on EC2
+MySQL runs locally on the EC2 instance.
 
-Spring connects via:
+Spring Boot connection string:
 
 jdbc:mysql://localhost:3306/confessionverse
+
+Database access is not publicly exposed.
+
 💾 Automated Backups
 
 Daily MySQL backup via cron at 03:00 AM:
@@ -82,6 +94,9 @@ mysqldump -u root -pPASSWORD confessionverse | gzip > /home/ubuntu/backups/backu
 Backups stored in:
 
 /home/ubuntu/backups
+
+Backup strategy ensures data recoverability in case of server failure.
+
 📊 Logging
 
 Production logging configuration:
@@ -89,36 +104,56 @@ Production logging configuration:
 spring.jpa.show-sql=false
 logging.level.root=INFO
 
-Debug logs disabled in production.
+SQL logging disabled
+
+Debug logs disabled in production
+
+Minimal logging footprint for performance
 
 🔄 Rebuild After Code Changes
 ./mvnw clean package -DskipTests
+
 docker stop confessionverse-backend
 docker rm confessionverse-backend
+
 docker build -t confessionverse-backend .
 docker run ...
-🧠 Production Notes
 
-Backend no longer runs via systemd.
+Backend is fully containerized and no longer relies on:
 
-No java -jar manual execution.
+systemd services
 
-Secrets managed via environment variables.
+manual java -jar execution
 
-Docker restart policy enabled.
+🛡 Security & Production Notes
 
-Ready for future migration to:
+Secrets managed via environment variables
 
-AWS RDS
+No hardcoded credentials
+
+Docker restart policy enabled
+
+Database not publicly exposed
+
+Debug logging disabled
+
+Production-ready single-instance deployment
+
+🔮 Planned Improvements
+
+Migration to AWS RDS
 
 Nginx reverse proxy
 
-SSL (Let's Encrypt)
+HTTPS via Let's Encrypt
 
 CI/CD pipeline
 
 AWS ECR
 
+Infrastructure as Code (Terraform)
+
 📌 Status
 
-Backend is production-ready for single-instance deployment.
+Production-ready for single-instance deployment.
+Currently optimized for MVP and controlled scaling.
