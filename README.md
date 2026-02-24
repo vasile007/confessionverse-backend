@@ -1,8 +1,8 @@
 ConfessionVerse Backend
 
-Production-ready Spring Boot backend deployed in Docker on AWS EC2.
+Production-ready Spring Boot backend deployed in Docker on AWS EC2, using Amazon RDS for managed database infrastructure.
 
-This backend powers the ConfessionVerse platform, handling authentication, AI integration, billing, real-time features, and database operations.
+This service powers the ConfessionVerse platform, handling authentication, AI integration, billing, real-time messaging, and persistent data storage.
 
 🚀 Tech Stack
 
@@ -10,7 +10,7 @@ Java 21
 
 Spring Boot 3
 
-MySQL 8
+Amazon RDS (MySQL 8)
 
 Docker
 
@@ -22,31 +22,49 @@ OpenAI API
 
 SMTP (Email Service)
 
-🏗 Production Architecture (Current Setup)
+🏗 Production Architecture
 
-Single EC2 instance architecture:
+Single EC2 instance with managed database architecture:
 
-EC2
-├── Docker
-│ └── confessionverse-backend (container)
-├── MySQL (local instance)
-└── Automated daily database backups (cron)
+Internet
+   ↓
+Nginx (Docker)
+   ↓
+Frontend (Docker)
+   ↓
+Backend (Docker - Spring Boot)
+   ↓
+Amazon RDS (MySQL 8 - Managed)
+Infrastructure Characteristics
 
-The backend runs inside Docker with environment-based configuration.
-Secrets are not stored in source control.
+Backend runs inside Docker on EC2
 
-🐳 Docker Setup
+Database runs on Amazon RDS (managed service)
+
+RDS is deployed inside the same VPC
+
+Access to database restricted via Security Groups
+
+Database is not publicly accessible
+
+Encryption enabled (AWS KMS)
+
+Automated backups enabled (RDS managed)
+
+Secrets are injected via environment variables and never committed to source control.
+
+🐳 Docker Deployment
 Build Image
 docker build -t confessionverse-backend .
 Run Container
 docker run -d \
   --name confessionverse-backend \
-  --network host \
+  --network confessionverse-network \
   --env-file .env \
   --restart unless-stopped \
+  -p 8082:8082 \
   confessionverse-backend
-
-Container is configured with:
+Container Characteristics
 
 Automatic restart on failure
 
@@ -54,17 +72,27 @@ Automatic restart after server reboot
 
 Environment-based secret injection
 
+Fully stateless application container
+
+No systemd services.
+No manual java -jar execution.
+
 🔐 Environment Variables
 
 Production secrets are stored only in a server-side .env file.
 
 Example .env.example:
 
-DB_PASSWORD=
+spring.datasource.url=
+spring.datasource.username=
+spring.datasource.password=
+
 JWT_SECRET=
 OPENAI_API_KEY=
+
 STRIPE_SECRET_KEY=
 STRIPE_WEBHOOK_SIGNING_SECRET=
+
 SMTP_HOST=
 SMTP_PORT=
 SMTP_USER=
@@ -75,29 +103,30 @@ SMTP_FROM=
 
 ⚠ .env is never committed to Git.
 
-🗄 Database
+🗄 Database (Production)
 
-MySQL runs locally on the EC2 instance.
+Production database runs on Amazon RDS (MySQL 8).
 
-Spring Boot connection string:
+Characteristics
 
-jdbc:mysql://localhost:3306/confessionverse
+Managed by AWS
 
-Database access is not publicly exposed.
+Automated backups enabled
 
-💾 Automated Backups
+Encryption at rest (KMS)
 
-Daily MySQL backup via cron at 03:00 AM:
+Not publicly accessible
 
-mysqldump -u root -pPASSWORD confessionverse | gzip > /home/ubuntu/backups/backup_$(date +%F).sql.gz
+Accessible only from EC2 Security Group
 
-Backups stored in:
+Network-restricted via VPC
 
-/home/ubuntu/backups
+Connection Example
+jdbc:mysql://<rds-endpoint>:3306/confessionverse
 
-Backup strategy ensures data recoverability in case of server failure.
+Database is fully decoupled from the EC2 instance.
 
-📊 Logging
+📊 Logging Configuration
 
 Production logging configuration:
 
@@ -106,11 +135,11 @@ logging.level.root=INFO
 
 SQL logging disabled
 
-Debug logs disabled in production
+Debug logging disabled
 
-Minimal logging footprint for performance
+Optimized for performance and minimal log noise
 
-🔄 Rebuild After Code Changes
+🔄 Rebuild & Redeploy
 ./mvnw clean package -DskipTests
 
 docker stop confessionverse-backend
@@ -118,42 +147,44 @@ docker rm confessionverse-backend
 
 docker build -t confessionverse-backend .
 docker run ...
-
-Backend is fully containerized and no longer relies on:
-
-systemd services
-
-manual java -jar execution
-
-🛡 Security & Production Notes
+🛡 Security Considerations
 
 Secrets managed via environment variables
 
 No hardcoded credentials
 
-Docker restart policy enabled
+RDS not publicly exposed
 
-Database not publicly exposed
+Database access restricted via Security Groups
 
-Debug logging disabled
+Encryption enabled at rest
 
-Production-ready single-instance deployment
+Automatic restart policy enabled
+
+Minimal attack surface (only Nginx publicly exposed)
 
 🔮 Planned Improvements
 
-Migration to AWS RDS
+CI/CD pipeline (GitHub Actions)
 
-Nginx reverse proxy
-
-HTTPS via Let's Encrypt
-
-CI/CD pipeline
-
-AWS ECR
+Docker image publishing to AWS ECR
 
 Infrastructure as Code (Terraform)
 
-📌 Status
+HTTPS via Let's Encrypt
 
-Production-ready for single-instance deployment.
-Currently optimized for MVP and controlled scaling.
+Horizontal scaling (Load Balancer + multiple EC2 instances)
+
+Migration to container orchestration (ECS / EKS)
+
+📌 Current Status
+
+Production-ready single-instance architecture with managed database.
+
+Designed for MVP scalability and clean separation between:
+
+Application layer (Docker)
+
+Reverse proxy layer (Nginx)
+
+Managed database layer (Amazon RDS)
