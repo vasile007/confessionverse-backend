@@ -1,6 +1,6 @@
 ConfessionVerse Backend
 
-Production-ready Spring Boot backend deployed in Docker on AWS EC2, using Amazon RDS for managed database infrastructure.
+Production-grade Spring Boot backend deployed on AWS using Infrastructure as Code and a fully automated CI/CD pipeline.
 
 This service powers the ConfessionVerse platform, handling authentication, AI integration, billing, real-time messaging, and persistent data storage.
 
@@ -16,6 +16,14 @@ Docker
 
 AWS EC2
 
+AWS ECR
+
+AWS SSM
+
+Terraform (Infrastructure as Code)
+
+GitHub Actions (CI/CD)
+
 Stripe (Billing)
 
 OpenAI API
@@ -24,167 +32,177 @@ SMTP (Email Service)
 
 🏗 Production Architecture
 
-Single EC2 instance with managed database architecture:
+Single-instance cloud architecture provisioned via Terraform:
 
 Internet
-   ↓
-Nginx (Docker)
-   ↓
-Frontend (Docker)
-   ↓
-Backend (Docker - Spring Boot)
-   ↓
-Amazon RDS (MySQL 8 - Managed)
+↓
+Nginx (Docker container)
+↓
+Frontend (Docker container)
+↓
+Backend (Docker – Spring Boot)
+↓
+Amazon RDS (MySQL 8 – Managed)
+
 Infrastructure Characteristics
 
-Backend runs inside Docker on EC2
+Entire infrastructure provisioned using Terraform
 
-Database runs on Amazon RDS (managed service)
+EC2 instance deployed inside custom VPC
 
-RDS is deployed inside the same VPC
+RDS deployed in private subnets
 
-Access to database restricted via Security Groups
+Security Groups restrict database access to EC2 only
 
-Database is not publicly accessible
+RDS not publicly accessible
 
-Encryption enabled (AWS KMS)
+Encryption at rest enabled (AWS KMS)
 
-Automated backups enabled (RDS managed)
+Automated backups managed by RDS
 
-Secrets are injected via environment variables and never committed to source control.
+Remote Terraform state with locking (S3 + DynamoDB)
 
-🐳 Docker Deployment
-Build Image
-docker build -t confessionverse-backend .
-Run Container
-docker run -d \
-  --name confessionverse-backend \
-  --network confessionverse-network \
-  --env-file .env \
-  --restart unless-stopped \
-  -p 8082:8082 \
-  confessionverse-backend
-Container Characteristics
+🐳 Containerization
 
-Automatic restart on failure
+Backend runs as a stateless Docker container:
 
-Automatic restart after server reboot
+Built via Dockerfile
 
-Environment-based secret injection
+No systemd services
 
-Fully stateless application container
+No manual java -jar
 
-No systemd services.
-No manual java -jar execution.
+Automatic restart policy
 
-🔐 Environment Variables
+Environment-based configuration
 
-Production secrets are stored only in a server-side .env file.
+Container properties:
 
-Example .env.example:
+--restart unless-stopped
 
-spring.datasource.url=
-spring.datasource.username=
-spring.datasource.password=
+Environment secrets injected via .env
 
-JWT_SECRET=
-OPENAI_API_KEY=
+Fully decoupled from host system
 
-STRIPE_SECRET_KEY=
-STRIPE_WEBHOOK_SIGNING_SECRET=
+🔄 CI/CD Pipeline
 
-SMTP_HOST=
-SMTP_PORT=
-SMTP_USER=
-SMTP_PASS=
-SMTP_AUTH=true
-SMTP_STARTTLS_ENABLE=true
-SMTP_FROM=
+Fully automated deployment pipeline using GitHub Actions.
 
-⚠ .env is never committed to Git.
+On every push to main:
 
-🗄 Database (Production)
+Docker image is built
+
+Image is pushed to AWS ECR
+
+EC2 instance is accessed via AWS SSM
+
+Existing container is stopped and removed
+
+New image is pulled
+
+Updated container is deployed automatically
+
+Zero manual SSH.
+Zero manual Docker commands.
+Zero production drift.
+
+Deployment is fully reproducible and automated.
+
+🗄 Database Architecture
 
 Production database runs on Amazon RDS (MySQL 8).
 
-Characteristics
+Characteristics:
 
 Managed by AWS
 
-Automated backups enabled
-
-Encryption at rest (KMS)
+Deployed inside private subnets
 
 Not publicly accessible
 
-Accessible only from EC2 Security Group
+Access restricted via Security Groups
 
-Network-restricted via VPC
+Encryption at rest enabled (KMS)
 
-Connection Example
+Automated backups enabled
+
+Database fully decoupled from EC2 lifecycle
+
+Connection example:
+
 jdbc:mysql://<rds-endpoint>:3306/confessionverse
 
-Database is fully decoupled from the EC2 instance.
+🔐 Security Model
 
-📊 Logging Configuration
+Secrets injected via environment variables
+
+.env file stored only on EC2
+
+No secrets committed to Git
+
+IAM role attached to EC2 for SSM access
+
+Private database networking
+
+Minimal attack surface (only Nginx publicly exposed)
+
+CI/CD uses IAM user with scoped permissions
+
+📊 Logging & Configuration
 
 Production logging configuration:
-
-spring.jpa.show-sql=false
-logging.level.root=INFO
 
 SQL logging disabled
 
 Debug logging disabled
 
-Optimized for performance and minimal log noise
+Optimized for performance
 
-🔄 Rebuild & Redeploy
-./mvnw clean package -DskipTests
+Application-level logs only
 
-docker stop confessionverse-backend
-docker rm confessionverse-backend
+🧱 Infrastructure as Code
 
-docker build -t confessionverse-backend .
-docker run ...
-🛡 Security Considerations
+All infrastructure is defined using Terraform modules:
 
-Secrets managed via environment variables
+VPC
 
-No hardcoded credentials
+Subnets (public & private)
 
-RDS not publicly exposed
+Route tables
 
-Database access restricted via Security Groups
+Internet Gateway
 
-Encryption enabled at rest
+Security Groups
 
-Automatic restart policy enabled
+EC2 instance
 
-Minimal attack surface (only Nginx publicly exposed)
+RDS instance
 
-🔮 Planned Improvements
+IAM roles
 
-CI/CD pipeline (GitHub Actions)
+Remote state backend (S3 + DynamoDB lock)
 
-Docker image publishing to AWS ECR
+Infrastructure is version-controlled and reproducible.
 
-Infrastructure as Code (Terraform)
+📌 Current Architecture Status
 
-HTTPS via Let's Encrypt
+✔ Infrastructure as Code
+✔ Private managed database
+✔ Fully containerized backend
+✔ CI/CD pipeline
+✔ Automated Docker image publishing (ECR)
+✔ Automated deployment via SSM
+✔ No manual production operations
 
-Horizontal scaling (Load Balancer + multiple EC2 instances)
+This architecture represents a production-ready single-instance cloud deployment designed for scalability evolution toward:
 
-Migration to container orchestration (ECS / EKS)
+Application Load Balancer
 
-📌 Current Status
+Multi-instance EC2
 
-Production-ready single-instance architecture with managed database.
+ECS / EKS migration
 
-Designed for MVP scalability and clean separation between:
+Blue/Green deployments
 
-Application layer (Docker)
+Horizontal scaling
 
-Reverse proxy layer (Nginx)
-
-Managed database layer (Amazon RDS)
