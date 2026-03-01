@@ -1,121 +1,125 @@
+ConfessionVerse – Backend
 
-ConfessionVerse Backend
+Spring Boot backend powering the ConfessionVerse platform, responsible for authentication, AI integration, billing workflows, real-time messaging, and persistent data storage.
 
-Production-grade Spring Boot backend deployed on AWS using Docker and a fully automated CI/CD pipeline.
-
-This service powers the ConfessionVerse platform, handling authentication, AI integration, billing, real-time messaging, and persistent data storage.
+Deployed as a Docker container on AWS with automated CI/CD.
 
 🚀 Tech Stack
 
 Java 17
+
 Spring Boot 3
-MySQL
+
+MySQL (Amazon RDS)
+
 Docker
+
 GitHub Actions (CI/CD)
-AWS EC2
-AWS ECR
-AWS SSM
-Stripe (Billing)
+
+AWS EC2, ECR, SSM
+
+Stripe API
+
 OpenAI API
-SMTP (Email Service)
 
-Infrastructure is provisioned separately using Terraform (see infrastructure repository).
+SMTP
 
-🏗 Application Deployment Architecture
+Infrastructure provisioning is handled separately via Terraform (see infrastructure repository).
+
+🏗 Deployment Architecture
 
 Single-instance Docker-based deployment:
 
 Internet
-↓
-Nginx (reverse proxy container)
-↓
-Spring Boot Backend (Docker container)
-↓
-Amazon RDS (MySQL – private networking)
+→ Nginx (reverse proxy)
+→ Spring Boot container
+→ Amazon RDS (private networking)
 
-The backend is deployed as a stateless container and connects securely to a managed MySQL database.
+The application runs as a stateless container and connects securely to a managed MySQL database.
+
+🔐 Security & Production Features
+
+JWT-based authentication and authorization
+
+Password hashing using BCrypt
+
+Rate limiting implemented using Bucket4j
+
+Input validation using Bean Validation
+
+Centralized exception handling
+
+Environment-based secret management
+
+No secrets committed to source control
+
+Only Nginx is publicly exposed; backend and database operate within controlled networking.
+
+🤖 AI Integration
+
+Integration with OpenAI API
+
+Backend-controlled API key management
+
+Request validation and error handling
+
+Secure third-party service communication
 
 🐳 Containerization
 
-Backend runs as a stateless Docker container:
+Built via Dockerfile
 
-Built using Dockerfile
+Stateless architecture
 
-No systemd services
-
-No manual java -jar
-
-Automatic restart policy (--restart unless-stopped)
+Restart policy: --restart unless-stopped
 
 Environment-based configuration
-
-Secrets injected via environment variables
 
 Fully decoupled from host system
 
 🔄 CI/CD Pipeline
 
-Fully automated deployment pipeline using GitHub Actions.
+Automated deployment workflow:
 
-On every push to main:
+Docker image build on push to main
 
-Docker image is built
+Push image to Amazon ECR
 
-Image is pushed to Amazon ECR
+Remote deployment via AWS Systems Manager
 
-EC2 instance is accessed via AWS SSM
+Container replacement without manual SSH
 
-Existing container is stopped and removed
-
-New image is pulled
-
-Updated container is deployed automatically
-
-No manual SSH. No manual Docker commands. No production drift.
-
-Deployment is fully reproducible and automated.
+Deployment is reproducible and fully automated.
 
 🗄 Database
 
-Production database runs on Amazon RDS (MySQL 8).
+Amazon RDS (MySQL 8):
 
-Managed MySQL service
+Managed database service
 
-Securely connected from backend container
+Private networking configuration
 
-Database lifecycle decoupled from EC2 instance
+Decoupled from EC2 lifecycle
 
-Connection example:
+Example connection format:
 
 jdbc:mysql://<host>:3306/confessionverse
-🔐 Security Model (Application Level)
-
-Secrets injected via environment variables
-
-.env file stored only on EC2
-
-No secrets committed to Git
-
-IAM role used for secure container deployment
-
-Minimal public attack surface (only Nginx exposed)
-
 📊 Logging & Configuration
 
-Production logging configuration:
+Production-optimized logging
 
-SQL logging disabled
+SQL and debug logging disabled in production
 
-Debug logging disabled
+Structured application-level logs
 
-Optimized for performance
-
-Application-level logs only
+Environment-based profiles
 
 📌 Architecture Characteristics
 
-✔ Fully containerized backend
-✔ Automated CI/CD deployment
-✔ Secure database connectivity
-✔ Reproducible Docker-based deployment
-✔ Infrastructure provisioned separately via Terraform
+✔ Layered architecture (Controller → Service → Repository)
+✔ JWT-secured API
+✔ Rate limiting protection
+✔ Third-party API integration
+✔ Dockerized deployment
+✔ Automated CI/CD
+✔ Private managed database
