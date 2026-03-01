@@ -1,86 +1,55 @@
+
 ConfessionVerse Backend
 
-Production-grade Spring Boot backend deployed on AWS using Infrastructure as Code and a fully automated CI/CD pipeline.
+Production-grade Spring Boot backend deployed on AWS using Docker and a fully automated CI/CD pipeline.
 
 This service powers the ConfessionVerse platform, handling authentication, AI integration, billing, real-time messaging, and persistent data storage.
 
 🚀 Tech Stack
 
-Java 21
-
+Java 17
 Spring Boot 3
-
-Amazon RDS (MySQL 8)
-
+MySQL
 Docker
-
-AWS EC2
-
-AWS ECR
-
-AWS SSM
-
-Terraform (Infrastructure as Code)
-
 GitHub Actions (CI/CD)
-
+AWS EC2
+AWS ECR
+AWS SSM
 Stripe (Billing)
-
 OpenAI API
-
 SMTP (Email Service)
 
-🏗 Production Architecture
+Infrastructure is provisioned separately using Terraform (see infrastructure repository).
 
-Single-instance cloud architecture provisioned via Terraform:
+🏗 Application Deployment Architecture
+
+Single-instance Docker-based deployment:
 
 Internet
 ↓
-Nginx (Docker container)
+Nginx (reverse proxy container)
 ↓
-Frontend (Docker container)
+Spring Boot Backend (Docker container)
 ↓
-Backend (Docker – Spring Boot)
-↓
-Amazon RDS (MySQL 8 – Managed)
+Amazon RDS (MySQL – private networking)
 
-Infrastructure Characteristics
-
-Entire infrastructure provisioned using Terraform
-
-EC2 instance deployed inside custom VPC
-
-RDS deployed in private subnets
-
-Security Groups restrict database access to EC2 only
-
-RDS not publicly accessible
-
-Encryption at rest enabled (AWS KMS)
-
-Automated backups managed by RDS
-
-Remote Terraform state with locking (S3 + DynamoDB)
+The backend is deployed as a stateless container and connects securely to a managed MySQL database.
 
 🐳 Containerization
 
 Backend runs as a stateless Docker container:
 
-Built via Dockerfile
+Built using Dockerfile
 
 No systemd services
 
 No manual java -jar
 
-Automatic restart policy
+Automatic restart policy (--restart unless-stopped)
 
 Environment-based configuration
 
-Container properties:
-
---restart unless-stopped
-
-Environment secrets injected via .env
+Secrets injected via environment variables
 
 Fully decoupled from host system
 
@@ -92,7 +61,7 @@ On every push to main:
 
 Docker image is built
 
-Image is pushed to AWS ECR
+Image is pushed to Amazon ECR
 
 EC2 instance is accessed via AWS SSM
 
@@ -102,37 +71,24 @@ New image is pulled
 
 Updated container is deployed automatically
 
-Zero manual SSH.
-Zero manual Docker commands.
-Zero production drift.
+No manual SSH. No manual Docker commands. No production drift.
 
 Deployment is fully reproducible and automated.
 
-🗄 Database Architecture
+🗄 Database
 
 Production database runs on Amazon RDS (MySQL 8).
 
-Characteristics:
+Managed MySQL service
 
-Managed by AWS
+Securely connected from backend container
 
-Deployed inside private subnets
-
-Not publicly accessible
-
-Access restricted via Security Groups
-
-Encryption at rest enabled (KMS)
-
-Automated backups enabled
-
-Database fully decoupled from EC2 lifecycle
+Database lifecycle decoupled from EC2 instance
 
 Connection example:
 
-jdbc:mysql://<rds-endpoint>:3306/confessionverse
-
-🔐 Security Model
+jdbc:mysql://<host>:3306/confessionverse
+🔐 Security Model (Application Level)
 
 Secrets injected via environment variables
 
@@ -140,13 +96,9 @@ Secrets injected via environment variables
 
 No secrets committed to Git
 
-IAM role attached to EC2 for SSM access
+IAM role used for secure container deployment
 
-Private database networking
-
-Minimal attack surface (only Nginx publicly exposed)
-
-CI/CD uses IAM user with scoped permissions
+Minimal public attack surface (only Nginx exposed)
 
 📊 Logging & Configuration
 
@@ -160,49 +112,10 @@ Optimized for performance
 
 Application-level logs only
 
-🧱 Infrastructure as Code
+📌 Architecture Characteristics
 
-All infrastructure is defined using Terraform modules:
-
-VPC
-
-Subnets (public & private)
-
-Route tables
-
-Internet Gateway
-
-Security Groups
-
-EC2 instance
-
-RDS instance
-
-IAM roles
-
-Remote state backend (S3 + DynamoDB lock)
-
-Infrastructure is version-controlled and reproducible.
-
-📌 Current Architecture Status
-
-✔ Infrastructure as Code
-✔ Private managed database
 ✔ Fully containerized backend
-✔ CI/CD pipeline
-✔ Automated Docker image publishing (ECR)
-✔ Automated deployment via SSM
-✔ No manual production operations
-
-This architecture represents a production-ready single-instance cloud deployment designed for scalability evolution toward:
-
-Application Load Balancer
-
-Multi-instance EC2
-
-ECS / EKS migration
-
-Blue/Green deployments
-
-Horizontal scaling
-
+✔ Automated CI/CD deployment
+✔ Secure database connectivity
+✔ Reproducible Docker-based deployment
+✔ Infrastructure provisioned separately via Terraform
