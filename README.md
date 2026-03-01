@@ -90,6 +90,20 @@ Subscription state synchronization with application database
 
 Automated billing-related email notifications
 
+🌍 Internationalization (i18n)
+
+Multi-language support
+
+Locale-based message resolution
+
+Backend-driven language handling
+
+Translation support via message resource files
+
+Dacă backend-ul tău:
+
+
+
 
 🐳 Containerization
 
@@ -130,6 +144,7 @@ Decoupled from EC2 lifecycle
 Example connection format:
 
 jdbc:mysql://<host>:3306/confessionverse
+
 📊 Logging & Configuration
 
 Production-optimized logging
