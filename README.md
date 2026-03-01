@@ -65,6 +65,32 @@ Request validation and error handling
 
 Secure third-party service communication
 
+
+💳 Billing & Subscription System
+
+Stripe Checkout integration for secure payment processing
+
+Subscription-based pricing model with multiple plans
+
+Trial period support for new subscriptions
+
+Plan upgrade and downgrade logic
+
+Subscription cancellation handling
+
+Add-on / boost purchase functionality
+
+Secure Stripe webhook handling
+
+Webhook signature verification to prevent spoofed events
+
+Server-side validation of payment events
+
+Subscription state synchronization with application database
+
+Automated billing-related email notifications
+
+
 🐳 Containerization
 
 Built via Dockerfile
