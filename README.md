@@ -1,166 +1,203 @@
-ConfessionVerse – Backend
+
+# ConfessionVerse – Backend
 
 Spring Boot backend powering the ConfessionVerse platform, responsible for authentication, AI integration, billing workflows, real-time messaging, and persistent data storage.
 
-Deployed as a Docker container on AWS with automated CI/CD.
+The application is deployed as a **Docker container on AWS EC2** with automated CI/CD.
 
-🚀 Tech Stack
+---
 
-Java 17
+# 🚀 Tech Stack
 
-Spring Boot 3
+* Java 17
+* Spring Boot 3
+* Amazon RDS (MySQL)
+* Docker
+* GitHub Actions (CI/CD)
+* AWS EC2
+* Amazon ECR
+* AWS Systems Manager (SSM)
+* Stripe API
+* OpenAI API
+* SMTP email services
 
-MySQL (Amazon RDS)
+Infrastructure provisioning is handled separately using **Terraform** in the infrastructure repository.
 
-Docker
+---
 
-GitHub Actions (CI/CD)
+# 🏗 Deployment Architecture
 
-AWS EC2, ECR, SSM
+The backend runs as a stateless container behind a reverse proxy.
 
-Stripe API
-
-OpenAI API
-
-SMTP
-
-Infrastructure provisioning is handled separately via Terraform (see infrastructure repository).
-
-🏗 Deployment Architecture
-
-Single-instance Docker-based deployment:
-
+```text id="backend-arch"
 Internet
-→ Nginx (reverse proxy)
-→ Spring Boot container
-→ Amazon RDS (private networking)
+   │
+   ▼
+Nginx Reverse Proxy
+   │
+   ▼
+Spring Boot Container
+   │
+   ▼
+Amazon RDS (MySQL)
+```
 
-The application runs as a stateless container and connects securely to a managed MySQL database.
+Key characteristics:
 
-🔐 Security & Production Features
+* Nginx is the only publicly exposed service
+* Backend container communicates with the database through private networking
+* Database is not publicly accessible
 
-JWT-based authentication and authorization
+---
 
-Password hashing using BCrypt
+# 🔐 Security & Production Features
 
-Rate limiting implemented using Bucket4j
+Security mechanisms implemented in the backend:
 
-Input validation using Bean Validation
+* JWT-based authentication and authorization
+* Password hashing using BCrypt
+* Rate limiting using Bucket4j
+* Input validation using Bean Validation
+* Centralized exception handling
+* Environment-based secret management
 
-Centralized exception handling
+Security design principles:
 
-Environment-based secret management
+* no secrets committed to source control
+* backend isolated behind reverse proxy
+* database deployed in private subnets
 
-No secrets committed to source control
+---
 
-Only Nginx is publicly exposed; backend and database operate within controlled networking.
+# 🤖 AI Integration
 
-🤖 AI Integration
+The backend integrates with the **OpenAI API**.
 
-Integration with OpenAI API
+Capabilities include:
 
-Backend-controlled API key management
+* AI-assisted functionality
+* request validation
+* secure API key handling
+* robust error handling for external services
 
-Request validation and error handling
+All AI interactions are processed server-side.
 
-Secure third-party service communication
+---
 
+# 💳 Billing & Subscription System
 
-💳 Billing & Subscription System
+Stripe integration provides a full subscription-based billing system.
 
-Stripe Checkout integration for secure payment processing
+Features include:
 
-Subscription-based pricing model with multiple plans
+* Stripe Checkout integration
+* subscription plan management
+* free trial support
+* plan upgrade and downgrade workflows
+* subscription cancellation handling
+* add-on / boost purchase functionality
 
-Trial period support for new subscriptions
+Webhook security features:
 
-Plan upgrade and downgrade logic
+* Stripe webhook signature verification
+* server-side event validation
+* payment state synchronization with database
 
-Subscription cancellation handling
+Billing events trigger automated email notifications.
 
-Add-on / boost purchase functionality
+---
 
-Secure Stripe webhook handling
+# 🌍 Internationalization (i18n)
 
-Webhook signature verification to prevent spoofed events
+The backend supports multi-language functionality.
 
-Server-side validation of payment events
+Features:
 
-Subscription state synchronization with application database
+* locale-based message resolution
+* backend-driven language handling
+* message resource files for translations
 
-Automated billing-related email notifications
+---
 
-🌍 Internationalization (i18n)
+# 🐳 Containerization
 
-Multi-language support
+The backend is packaged as a Docker container.
 
-Locale-based message resolution
+Container characteristics:
 
-Backend-driven language handling
+* built using a Dockerfile
+* stateless architecture
+* restart policy `unless-stopped`
+* environment-based configuration
+* fully decoupled from the host system
 
-Translation support via message resource files
+---
 
-Dacă backend-ul tău:
+# 🔄 CI/CD Pipeline
 
+Backend deployment is fully automated.
 
+Deployment pipeline:
 
+```text id="backend-ci"
+Developer Push
+      │
+      ▼
+GitHub Actions
+      │
+      ▼
+Docker Image Build
+      │
+      ▼
+Push to Amazon ECR
+      │
+      ▼
+Remote Deployment via AWS Systems Manager
+      │
+      ▼
+Container Restart on EC2
+```
 
-🐳 Containerization
+This approach ensures **reproducible deployments without manual SSH access**.
 
-Built via Dockerfile
+---
 
-Stateless architecture
+# 🗄 Database
 
-Restart policy: --restart unless-stopped
+The backend connects to **Amazon RDS (MySQL 8)**.
 
-Environment-based configuration
+Characteristics:
 
-Fully decoupled from host system
-
-🔄 CI/CD Pipeline
-
-Automated deployment workflow:
-
-Docker image build on push to main
-
-Push image to Amazon ECR
-
-Remote deployment via AWS Systems Manager
-
-Container replacement without manual SSH
-
-Deployment is reproducible and fully automated.
-
-🗄 Database
-
-Amazon RDS (MySQL 8):
-
-Managed database service
-
-Private networking configuration
-
-Decoupled from EC2 lifecycle
+* managed database service
+* private networking
+* decoupled from EC2 lifecycle
+* persistent storage independent from containers
 
 Example connection format:
 
-jdbc:mysql://<host>:3306/confessionverse
+```id="jdbc-example"
+jdbc:mysql://<rds-endpoint>:3306/confessionverse
+```
 
-📊 Logging & Configuration
+---
 
-Production-optimized logging
+# 📊 Logging & Configuration
 
-SQL and debug logging disabled in production
+Production logging configuration includes:
 
-Structured application-level logs
+* optimized logging levels
+* SQL logging disabled in production
+* structured application logs
+* environment-based configuration profiles
 
-Environment-based profiles
+---
 
-📌 Architecture Characteristics
+# 📌 Architecture Characteristics
 
-✔ Layered architecture (Controller → Service → Repository)
-✔ JWT-secured API
-✔ Rate limiting protection
-✔ Third-party API integration
-✔ Dockerized deployment
-✔ Automated CI/CD
-✔ Private managed database
+* layered architecture (Controller → Service → Repository)
+* JWT-secured API
+* rate limiting protection
+* third-party API integrations
+* Dockerized deployment
+* automated CI/CD pipeline
+* private managed database
