@@ -40,14 +40,15 @@ public class SecurityConfigure {
                 .cors(cors -> cors.configurationSource(request -> {
                     CorsConfiguration config = new CorsConfiguration();
                     // React runs on port 5173
-                    config.setAllowedOrigins(List.of( "http://localhost:5173",
+                    config.setAllowedOriginPatterns(List.of(
                             "https://confessionverse.live",
                             "https://www.confessionverse.live"
 
                     ));
                     config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-                    config.setAllowCredentials(false);
+
                     config.setAllowedHeaders(List.of("*"));
+                    config.setAllowCredentials(true);
                     return config;
                 }))
                 .authorizeHttpRequests(auth -> auth
