@@ -67,7 +67,7 @@ public class SecurityConfigure {
                                 "/v3/api-docs/**",
                                 "/v3/api-docs.yaml").permitAll()
 
-                        // Alte endpointuri securizate
+                        .requestMatchers("/actuator", "/actuator/**").permitAll()
                         .requestMatchers("/api/auth/me").authenticated()
                         .requestMatchers("/ws", "/ws/**").permitAll()
                         .requestMatchers("/api/chatrooms/**").authenticated()
@@ -76,7 +76,6 @@ public class SecurityConfigure {
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/users/**").hasAnyRole("USER", "ADMIN")
                         .requestMatchers("/api/confessions/public").permitAll()
-                        .requestMatchers("/actuator/**").permitAll()
                       ///  .requestMatchers("/api/reports/**").permitAll()
                         .anyRequest().authenticated()
                 )
