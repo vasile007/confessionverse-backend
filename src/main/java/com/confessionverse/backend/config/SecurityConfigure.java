@@ -57,7 +57,8 @@ public class SecurityConfigure {
                                 "/api/auth/login",
                                 "/api/auth/register",
                                 "/api/auth/forgot-password",
-                                "/api/auth/reset-password"
+                                "/api/auth/reset-password",
+                                "/actuator/**"
                         ).permitAll()
                         .requestMatchers("/api/billing/webhook").permitAll()
 
