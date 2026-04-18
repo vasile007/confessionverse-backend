@@ -146,6 +146,7 @@ Container characteristics:
 Backend deployment is fully automated using GitHub Actions.
 
 Deployment pipeline:
+```text id="backend-arch"
 
 Developer Push
 │
@@ -165,8 +166,7 @@ SSH Deployment to EC2
 docker-compose up -d --build
 
 This approach ensures reproducible deployments without manual intervention.
-
-
+```
 ---
 
 # 🗄 Database
