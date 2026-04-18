@@ -5,6 +5,14 @@ Spring Boot backend powering the ConfessionVerse platform, responsible for authe
 
 The application is deployed as a **Docker container on AWS EC2** with automated CI/CD.
 
+## 🌐 Live Environment
+
+The backend is deployed in a live cloud environment and integrated with the frontend application.
+
+Note:
+This environment is actively under development and testing.
+
+
 ---
 
 # 🚀 Tech Stack
@@ -200,3 +208,4 @@ Production logging configuration includes:
 * Dockerized deployment
 * automated CI/CD pipeline
 * private managed database
+* stateless container-based architecture
