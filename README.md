@@ -133,32 +133,31 @@ Container characteristics:
 
 ---
 
-# 🔄 CI/CD Pipeline
+🔄 CI/CD Pipeline
 
-Backend deployment is fully automated.
+Backend deployment is fully automated using GitHub Actions.
 
 Deployment pipeline:
 
-```text id="backend-ci"
 Developer Push
-      │
-      ▼
+│
+▼
 GitHub Actions
-      │
-      ▼
+│
+▼
 Docker Image Build
-      │
-      ▼
+│
+▼
 Push to Amazon ECR
-      │
-      ▼
-Remote Deployment via AWS Systems Manager
-      │
-      ▼
-Container Restart on EC2
-```
+│
+▼
+SSH Deployment to EC2
+│
+▼
+docker-compose up -d --build
 
-This approach ensures **reproducible deployments without manual SSH access**.
+This approach ensures reproducible deployments without manual intervention.
+
 
 ---
 
