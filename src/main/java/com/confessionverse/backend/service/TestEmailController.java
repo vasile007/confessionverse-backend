@@ -14,7 +14,7 @@ public class TestEmailController {
     @GetMapping("/test-email")
     public String testEmail() {
 
-        emailService.sendTestEmail("EMAILUL_TAU@gmail.com");
+        emailService.sendTestEmail("bejan.vasi@ayhoo.com");
 
         return "Email sent!";
     }
