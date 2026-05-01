@@ -129,4 +129,5 @@ public class EmailService {
     private String sanitizeSubject(String subject) {
         return subject == null ? "" : subject.replaceAll("[\\r\\n]+", " ").trim();
     }
+
 }
