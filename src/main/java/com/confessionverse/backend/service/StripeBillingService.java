@@ -209,7 +209,11 @@ public class StripeBillingService {
             return null;
         }
 
-        upsertSubscription(userOptional.get(), subscriptionNode, null, null);
+        String previousStatus = subscriptionRepository.findTopByUserIdOrderByUpdatedAtDesc(userOptional.get().getId())
+                .map(Subscription::getStatus)
+                .orElse(null);
+        Subscription subscription = upsertSubscription(userOptional.get(), subscriptionNode, null, null);
+        sendSubscriptionLifecycleEmail(userOptional.get(), subscription, previousStatus);
         return userOptional.get().getId();
     }
 
@@ -604,6 +608,35 @@ public class StripeBillingService {
 
     private boolean isSupportedCurrency(String currency) {
         return "usd".equals(currency) || "gbp".equals(currency) || "ron".equals(currency);
+    }
+
+    private void sendSubscriptionLifecycleEmail(User user, Subscription subscription, String previousStatus) {
+        String currentStatus = subscription.getStatus();
+        if ("active".equalsIgnoreCase(currentStatus) && !isSameStatus(previousStatus, currentStatus)) {
+            billingEmailService.sendSubscriptionActiveEmail(
+                    user.getEmail(),
+                    subscription.getPlanType(),
+                    subscription.getCurrentPeriodEnd(),
+                    portalReturnUrl
+            );
+            return;
+        }
+
+        if ("canceled".equalsIgnoreCase(currentStatus) && !isSameStatus(previousStatus, currentStatus)) {
+            billingEmailService.sendSubscriptionCancelledEmail(
+                    user.getEmail(),
+                    subscription.getPlanType(),
+                    subscription.getCurrentPeriodEnd(),
+                    portalReturnUrl
+            );
+        }
+    }
+
+    private boolean isSameStatus(String left, String right) {
+        if (left == null || right == null) {
+            return left == right;
+        }
+        return left.equalsIgnoreCase(right);
     }
 
     private String firstNonBlank(String first, String second) {
