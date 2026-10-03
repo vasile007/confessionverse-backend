@@ -8,12 +8,15 @@ import com.confessionverse.backend.repository.ChatRoomRepository;
 import com.confessionverse.backend.repository.SubscriptionRepository;
 import com.confessionverse.backend.repository.UserRepository;
 import com.confessionverse.backend.security.JwtUtil;
+import com.confessionverse.backend.service.RandomChatMatchmakingService;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,9 +24,12 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.UUID;
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.hasItems;
 import static org.hamcrest.Matchers.not;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -54,6 +60,16 @@ class RandomChatJoinIntegrationTest {
     @Autowired
     private JwtUtil jwtUtil;
 
+    @Autowired
+    private RandomChatMatchmakingService matchmakingService;
+
+    private final List<Long> createdUserIds = new ArrayList<>();
+
+    @AfterEach
+    void clearWaitingUsers() {
+        createdUserIds.forEach(matchmakingService::cancel);
+    }
+
     @MockBean
     private Clock clock;
 
@@ -63,10 +79,37 @@ class RandomChatJoinIntegrationTest {
         User freeUser = createUser("random-free-day");
 
         mockMvc.perform(post("/api/chatrooms/random-join")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"roomType\":\"STANDARD\"}")
                         .header("Authorization", "Bearer " + tokenFor(freeUser)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.roomType").value(ChatRoomType.STANDARD.name()))
-                .andExpect(jsonPath("$.premium").value(false));
+                .andExpect(jsonPath("$.status").value("WAITING"))
+                .andExpect(jsonPath("$.roomType").value(ChatRoomType.STANDARD.name()));
+    }
+
+    @Test
+    void secondUserShouldMatchFirstWaitingUserWithoutSelfMatching() throws Exception {
+        stubClock("2026-02-15T14:00:00Z");
+        User first = createUser("random-first");
+        User second = createUser("random-second");
+
+        mockMvc.perform(post("/api/chatrooms/random-join")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"roomType\":\"STANDARD\"}")
+                        .header("Authorization", "Bearer " + tokenFor(first)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("WAITING"));
+
+        mockMvc.perform(post("/api/chatrooms/random-join")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"roomType\":\"STANDARD\"}")
+                        .header("Authorization", "Bearer " + tokenFor(second)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("MATCHED"))
+                .andExpect(jsonPath("$.chatRoom.participants.length()").value(2))
+                .andExpect(jsonPath("$.chatRoom.participants[*].id").value(hasItems(
+                        first.getId().intValue(), second.getId().intValue())))
+                .andExpect(jsonPath("$.chatRoom.id").isNumber());
     }
 
     @Test
@@ -75,14 +118,18 @@ class RandomChatJoinIntegrationTest {
 
         stubClock("2026-02-15T14:00:00Z");
         mockMvc.perform(post("/api/chatrooms/random-join")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"roomType\":\"LATE_NIGHT\"}")
                         .header("Authorization", "Bearer " + tokenFor(freeUser)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.roomType").value(not(ChatRoomType.LATE_NIGHT.name())));
+                .andExpect(status().isForbidden());
 
         stubClock("2026-02-15T23:00:00Z");
         mockMvc.perform(post("/api/chatrooms/random-join")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"roomType\":\"LATE_NIGHT\"}")
                         .header("Authorization", "Bearer " + tokenFor(freeUser)))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("WAITING"))
                 .andExpect(jsonPath("$.roomType").value(ChatRoomType.LATE_NIGHT.name()));
     }
 
@@ -92,9 +139,10 @@ class RandomChatJoinIntegrationTest {
         User freeUser = createUser("random-free-no-heartbeat");
 
         mockMvc.perform(post("/api/chatrooms/random-join")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"roomType\":\"HEARTBEAT\"}")
                         .header("Authorization", "Bearer " + tokenFor(freeUser)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.roomType").value(not(ChatRoomType.HEARTBEAT.name())));
+                .andExpect(status().isForbidden());
     }
 
     @Test
@@ -104,10 +152,12 @@ class RandomChatJoinIntegrationTest {
         createActiveSubscription(proUser);
 
         mockMvc.perform(post("/api/chatrooms/random-join")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"roomType\":\"HEARTBEAT\"}")
                         .header("Authorization", "Bearer " + tokenFor(proUser)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.roomType").value(ChatRoomType.HEARTBEAT.name()))
-                .andExpect(jsonPath("$.premium").value(true));
+                .andExpect(jsonPath("$.status").value("WAITING"))
+                .andExpect(jsonPath("$.roomType").value(ChatRoomType.HEARTBEAT.name()));
     }
 
     @Test
@@ -121,9 +171,11 @@ class RandomChatJoinIntegrationTest {
 
         User freeUser = createUser("random-create-standard");
         mockMvc.perform(post("/api/chatrooms/random-join")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"roomType\":\"STANDARD\"}")
                         .header("Authorization", "Bearer " + tokenFor(freeUser)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.roomType").value(ChatRoomType.STANDARD.name()));
+                .andExpect(jsonPath("$.status").value("WAITING"));
 
         long standardRooms = chatRoomRepository.findAllByRoomTypeOrderByIdAsc(ChatRoomType.STANDARD).size();
         org.junit.jupiter.api.Assertions.assertTrue(standardRooms >= 1);
@@ -154,7 +206,9 @@ class RandomChatJoinIntegrationTest {
         user.setPasswordHash("test-hash");
         user.setRole(Role.USER);
         user.setPremium(false);
-        return userRepository.save(user);
+        User saved = userRepository.save(user);
+        createdUserIds.add(saved.getId());
+        return saved;
     }
 
     private void createActiveSubscription(User user) {

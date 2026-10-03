@@ -3,11 +3,13 @@ package com.confessionverse.backend.controller;
 import com.confessionverse.backend.dto.ChatMessageDTO;
 import com.confessionverse.backend.exception.ResourceNotFoundException;
 import com.confessionverse.backend.mapper.ChatMessageMapper;
+import com.confessionverse.backend.mapper.MessageMapper;
 import com.confessionverse.backend.model.ChatRoom;
 import com.confessionverse.backend.model.Message;
 import com.confessionverse.backend.model.Role;
 import com.confessionverse.backend.model.User;
 import com.confessionverse.backend.repository.MessageRepository;
+import com.confessionverse.backend.repository.ChatRoomMembershipRepository;
 import com.confessionverse.backend.repository.UserRepository;
 import com.confessionverse.backend.service.ChatRoomService;
 import com.confessionverse.backend.service.FreePlanLimitService;
@@ -26,21 +28,27 @@ public class ChatWebSocketController {
     private final ChatRoomService chatRoomService;
     private final SimpMessagingTemplate messagingTemplate;
     private final FreePlanLimitService freePlanLimitService;
+    private final ChatRoomMembershipRepository chatRoomMembershipRepository;
+    private final MessageMapper messageMapper;
 
     public ChatWebSocketController(MessageRepository messageRepository,
                                    UserRepository userRepository,
                                    ChatRoomService chatRoomService,
                                    SimpMessagingTemplate messagingTemplate,
-                                   FreePlanLimitService freePlanLimitService) {
+                                   FreePlanLimitService freePlanLimitService,
+                                   ChatRoomMembershipRepository chatRoomMembershipRepository,
+                                   MessageMapper messageMapper) {
         this.messageRepository = messageRepository;
         this.userRepository = userRepository;
         this.chatRoomService = chatRoomService;
         this.messagingTemplate = messagingTemplate;
         this.freePlanLimitService = freePlanLimitService;
+        this.chatRoomMembershipRepository = chatRoomMembershipRepository;
+        this.messageMapper = messageMapper;
     }
 
     @MessageMapping("/chat.send")
-    public ChatMessageDTO sendMessage(ChatMessageDTO dto, Principal principal) {
+    public void sendMessage(ChatMessageDTO dto, Principal principal) {
         String senderEmail = principal != null ? principal.getName() : null;
         if (senderEmail == null || senderEmail.isBlank()) {
             throw new RuntimeException("Unauthorized: Missing user identity");
@@ -65,11 +73,13 @@ public class ChatWebSocketController {
 
         Message message = ChatMessageMapper.toEntity(dto, sender, chatRoom);
         message.setTimestamp(LocalDateTime.now());
-        messageRepository.save(message);
+        Message saved = messageRepository.save(message);
 
-        dto.setSender(sender.getUsername());
-        dto.setTimestamp(message.getTimestamp().toString());
-        return dto;
+        chatRoomMembershipRepository.findAllByChatRoom_IdAndActiveTrue(chatRoomId).stream()
+                .map(membership -> membership.getUser())
+                .filter(java.util.Objects::nonNull)
+                .forEach(participant -> messagingTemplate.convertAndSendToUser(
+                        participant.getEmail(), "/queue/messages", messageMapper.toResponseDTO(saved)));
     }
 
     @MessageMapping("/chat.private")

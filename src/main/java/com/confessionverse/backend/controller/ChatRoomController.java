@@ -2,6 +2,7 @@ package com.confessionverse.backend.controller;
 
 import com.confessionverse.backend.dto.requestDTO.ChatRoomCreateRequestDTO;
 import com.confessionverse.backend.dto.requestDTO.ChatRoomParticipantInviteRequestDTO;
+import com.confessionverse.backend.dto.requestDTO.RandomChatJoinRequestDTO;
 import com.confessionverse.backend.dto.responseDTO.ChatInvitationActionResponseDTO;
 import com.confessionverse.backend.dto.responseDTO.MessageResponseDTO;
 import com.confessionverse.backend.dto.responseDTO.ChatRoomSummaryDTO;
@@ -19,6 +20,7 @@ import com.confessionverse.backend.service.ChatInvitationService;
 import com.confessionverse.backend.service.ChatRoomService;
 import com.confessionverse.backend.service.FreePlanLimitService;
 import com.confessionverse.backend.service.UserService;
+import com.confessionverse.backend.service.RandomChatMatchmakingService;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -47,6 +49,7 @@ public class ChatRoomController {
     private final FreePlanLimitService freePlanLimitService;
     private final ChatInvitationService chatInvitationService;
     private final MessageMapper messageMapper;
+    private final RandomChatMatchmakingService matchmakingService;
 
     public ChatRoomController(ChatRoomRepository chatRoomRepository,
                               MessageRepository messageRepository,
@@ -54,7 +57,8 @@ public class ChatRoomController {
                               ChatRoomService chatRoomService,
                               FreePlanLimitService freePlanLimitService,
                               ChatInvitationService chatInvitationService,
-                              MessageMapper messageMapper) {
+                              MessageMapper messageMapper,
+                              RandomChatMatchmakingService matchmakingService) {
         this.chatRoomRepository = chatRoomRepository;
         this.messageRepository = messageRepository;
         this.userService = userService;
@@ -62,6 +66,7 @@ public class ChatRoomController {
         this.freePlanLimitService = freePlanLimitService;
         this.chatInvitationService = chatInvitationService;
         this.messageMapper = messageMapper;
+        this.matchmakingService = matchmakingService;
     }
 
     // ---------------- Create ChatRoom ----------------
@@ -121,11 +126,12 @@ public class ChatRoomController {
 
     @PostMapping("/random-join")
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<?> randomJoin(Authentication authentication) {
+    public ResponseEntity<?> randomJoin(@RequestBody @Valid RandomChatJoinRequestDTO request,
+                                        Authentication authentication) {
         try {
             User currentUser = userService.getUserEntityByEmail(authentication.getName());
-            ChatRoomSummaryDTO room = chatRoomService.randomJoin(currentUser);
-            return ResponseEntity.ok(room);
+            ChatRoomType roomType = parseRoomType(request.getRoomType());
+            return ResponseEntity.ok(matchmakingService.join(currentUser, roomType));
         } catch (PremiumRoomRequiredException ex) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of(
@@ -133,6 +139,14 @@ public class ChatRoomController {
                             "error", "This room is available for PRO members only."
                     ));
         }
+    }
+
+    @DeleteMapping("/random-waiting")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Void> cancelRandomWaiting(Authentication authentication) {
+        User currentUser = userService.getUserEntityByEmail(authentication.getName());
+        matchmakingService.cancel(currentUser.getId());
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/online-count")
@@ -216,7 +230,9 @@ public class ChatRoomController {
             if (authUserId == null) {
                 throw new AccessDeniedException("Only participants can leave this chat");
             }
-            chatRoomService.leaveRoom(parsedRoomId, authUserId);
+            if (!matchmakingService.leaveConversation(parsedRoomId, authUserId)) {
+                chatRoomService.leaveRoom(parsedRoomId, authUserId);
+            }
             return ResponseEntity.noContent().build();
         } catch (NumberFormatException ex) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)

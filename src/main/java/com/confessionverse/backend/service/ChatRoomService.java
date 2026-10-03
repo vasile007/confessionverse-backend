@@ -519,37 +519,6 @@ public class ChatRoomService implements OwnableService<ChatRoom> {
         );
     }
 
-    @Transactional
-    public ChatRoomSummaryDTO randomJoin(User currentUser) {
-        if (currentUser == null || currentUser.getId() == null) {
-            throw new AccessDeniedException("Authentication required");
-        }
-
-        ensureBaseRoomsExist();
-        ensureStandardMembership(currentUser);
-
-        List<ChatRoomType> eligibleTypes = new ArrayList<>();
-        if (subscriptionEntitlementService.isPro(currentUser.getId())) {
-            eligibleTypes.add(ChatRoomType.HEARTBEAT);
-        }
-        if (isLateNightNow()) {
-            eligibleTypes.add(ChatRoomType.LATE_NIGHT);
-        }
-        eligibleTypes.add(ChatRoomType.STANDARD);
-
-        List<ChatRoom> candidates = chatRoomRepository.findAllByRoomTypeInOrderByIdAsc(eligibleTypes);
-        ChatRoom selected = candidates.stream()
-                .filter(room -> room.getRoomType() == ChatRoomType.HEARTBEAT)
-                .findFirst()
-                .or(() -> candidates.stream().filter(room -> room.getRoomType() == ChatRoomType.LATE_NIGHT).findFirst())
-                .or(() -> candidates.stream().filter(room -> room.getRoomType() == ChatRoomType.STANDARD).findFirst())
-                .orElseGet(this::ensureStandardRoomExists);
-
-        enforcePremiumRoomAccess(currentUser, selected);
-        activateMembership(selected.getId(), currentUser.getId());
-        return toSummaryDto(selected);
-    }
-
     public long getOnlineCount() {
         return chatRoomMembershipRepository.countDistinctActiveUsers();
     }
@@ -716,11 +685,13 @@ public class ChatRoomService implements OwnableService<ChatRoom> {
         return hour >= 22 || hour <= 5;
     }
 
+    public boolean isLateNightAvailable() {
+        return isLateNightNow();
+    }
+
     private boolean isPremiumRoom(ChatRoomType roomType) {
         return roomType == ChatRoomType.HEARTBEAT || roomType == ChatRoomType.TAROT_DREAMS;
     }
 
 }
-
-
 
