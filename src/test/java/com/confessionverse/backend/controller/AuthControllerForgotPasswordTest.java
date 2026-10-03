@@ -6,6 +6,7 @@ import com.confessionverse.backend.service.CustomUserDetailsService;
 import com.confessionverse.backend.service.ChatRoomService;
 import com.confessionverse.backend.service.PasswordResetService;
 import com.confessionverse.backend.service.UserService;
+import com.confessionverse.backend.service.SubscriptionEntitlementService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -51,6 +52,9 @@ class AuthControllerForgotPasswordTest {
 
     @MockBean
     private PasswordResetService passwordResetService;
+
+    @MockBean
+    private SubscriptionEntitlementService subscriptionEntitlementService;
 
     @Test
     void forgotPasswordShouldReturnSameGenericResponseForExistingUser() throws Exception {

@@ -144,7 +144,7 @@ public class AuthController {
     public ResponseEntity<Map<String, String>> forgotPassword(@RequestBody @Valid ForgotPasswordRequest request) {
         try {
             passwordResetService.requestPasswordReset(request.getEmail());
-            return ResponseEntity.ok(Map.of("message", "Reset email sent successfully."));
+            return ResponseEntity.ok(Map.of("message", "If the account exists, a reset email has been sent."));
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(Map.of("error", ex.getMessage()));
@@ -214,5 +214,4 @@ public class AuthController {
                 .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "User not found")));
     }
 }
-
 

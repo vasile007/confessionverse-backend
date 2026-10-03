@@ -7,6 +7,7 @@ import com.confessionverse.backend.model.*;
 import com.confessionverse.backend.repository.ChatInvitationRepository;
 import com.confessionverse.backend.repository.ChatRoomMembershipRepository;
 import com.confessionverse.backend.repository.ChatRoomRepository;
+import com.confessionverse.backend.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -38,6 +39,10 @@ class ChatInvitationServiceTest {
     private SimpMessagingTemplate messagingTemplate;
     @Mock
     private ChatInvitationProperties chatInvitationProperties;
+    @Mock
+    private UserRepository userRepository;
+    @Mock
+    private FreePlanLimitService freePlanLimitService;
 
     private ChatInvitationService service;
 
@@ -50,7 +55,9 @@ class ChatInvitationServiceTest {
                 userService,
                 chatRoomService,
                 messagingTemplate,
-                chatInvitationProperties
+                chatInvitationProperties,
+                userRepository,
+                freePlanLimitService
         );
         when(chatInvitationProperties.getTtlHours()).thenReturn(24L);
     }

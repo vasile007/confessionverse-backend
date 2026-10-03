@@ -10,6 +10,7 @@ import com.confessionverse.backend.exception.PremiumRoomRequiredException;
 import com.confessionverse.backend.exception.ResourceNotFoundException;
 import com.confessionverse.backend.mapper.MessageMapper;
 import com.confessionverse.backend.model.ChatRoom;
+import com.confessionverse.backend.model.ChatInvitationStatus;
 import com.confessionverse.backend.model.ChatRoomType;
 import com.confessionverse.backend.model.Message;
 import com.confessionverse.backend.model.Role;
@@ -77,12 +78,11 @@ public class ChatRoomController {
         String usernameToAdd = body.getUsernameToAdd();
         String name = body.getName();
         ChatRoomType roomType = parseRoomType(body.getRoomType());
-        if (roomType == ChatRoomType.STANDARD) {
-            return ResponseEntity.badRequest().body(Map.of("error", "STANDARD room is system-managed"));
+        if (roomType == ChatRoomType.STANDARD || roomType == ChatRoomType.RANDOM) {
+            return ResponseEntity.badRequest().body(Map.of("error", roomType + " rooms are system-managed"));
         }
 
         User creator = userService.getUserEntityByEmail(email);
-        freePlanLimitService.enforceConversationCreateLimit(creator);
         if (usernameToAdd != null && !usernameToAdd.isBlank() && creator.getUsername().equalsIgnoreCase(usernameToAdd)) {
             return ResponseEntity.badRequest().body(Map.of("error", "You cannot invite yourself"));
         }
@@ -90,13 +90,30 @@ public class ChatRoomController {
             User target = userService.getUserEntityByUsername(usernameToAdd);
             chatRoomService.enforcePremiumRoomAccess(creator, roomType);
             chatRoomService.enforcePremiumRoomAccess(target, roomType);
+            if (roomType == ChatRoomType.DIRECT) {
+                ChatInvitationActionResponseDTO result = chatInvitationService
+                        .requestPrivateConversation(email, usernameToAdd);
+                Map<String, Object> response = new LinkedHashMap<>();
+                if (result.getChatRoom() != null) response.put("chatRoom", result.getChatRoom());
+                if (result.getInvitation() != null) response.put("invite", result.getInvitation());
+                response.put("chatRoomId", result.getChatRoomId());
+                response.put("status", result.getStatus());
+                response.put("message", result.getMessage());
+                return ResponseEntity.status(
+                                ChatInvitationStatus.ACCEPTED.name().equals(result.getStatus())
+                                        ? HttpStatus.OK : HttpStatus.CREATED)
+                        .body(response);
+            }
         }
 
+        freePlanLimitService.enforceConversationCreateLimit(creator);
         ChatRoom created = chatRoomService.createGroupRoom(email, null, name, roomType);
         ChatRoomSummaryDTO chatRoomSummary = chatRoomService.toSummaryDto(created);
 
         if (usernameToAdd != null && !usernameToAdd.isBlank()) {
             ChatInvitationActionResponseDTO inviteResult = chatInvitationService.createInvite(created.getId(), email, usernameToAdd);
+            // A direct room is not usable or visible until the invite is accepted.
+            chatRoomService.deactivateMembership(created.getId(), creator.getId());
             Map<String, Object> response = new LinkedHashMap<>();
             response.put("chatRoom", chatRoomSummary);
             response.put("invite", inviteResult.getInvitation());
@@ -130,8 +147,7 @@ public class ChatRoomController {
                                         Authentication authentication) {
         try {
             User currentUser = userService.getUserEntityByEmail(authentication.getName());
-            ChatRoomType roomType = parseRoomType(request.getRoomType());
-            return ResponseEntity.ok(matchmakingService.join(currentUser, roomType));
+            return ResponseEntity.ok(matchmakingService.join(currentUser));
         } catch (PremiumRoomRequiredException ex) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of(
@@ -139,6 +155,24 @@ public class ChatRoomController {
                             "error", "This room is available for PRO members only."
                     ));
         }
+    }
+
+    @PostMapping("/random-next")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<?> randomNext(@RequestBody(required = false) Map<String, Long> body,
+                                        Authentication authentication) {
+        User currentUser = userService.getUserEntityByEmail(authentication.getName());
+        Long currentRoomId = body == null ? null : body.get("currentRoomId");
+        return ResponseEntity.ok(matchmakingService.next(currentUser, currentRoomId));
+    }
+
+    @PostMapping("/random-heartbeat")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Void> randomHeartbeat(@RequestBody Map<String, Long> body,
+                                                Authentication authentication) {
+        User currentUser = userService.getUserEntityByEmail(authentication.getName());
+        matchmakingService.heartbeat(currentUser.getId(), body.get("roomId"));
+        return ResponseEntity.noContent().build();
     }
 
     @DeleteMapping("/random-waiting")

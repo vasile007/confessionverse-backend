@@ -16,6 +16,7 @@ import com.confessionverse.backend.service.FreePlanLimitService;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.security.Principal;
 import java.time.LocalDateTime;
@@ -48,6 +49,7 @@ public class ChatWebSocketController {
     }
 
     @MessageMapping("/chat.send")
+    @Transactional
     public void sendMessage(ChatMessageDTO dto, Principal principal) {
         String senderEmail = principal != null ? principal.getName() : null;
         if (senderEmail == null || senderEmail.isBlank()) {
@@ -83,6 +85,7 @@ public class ChatWebSocketController {
     }
 
     @MessageMapping("/chat.private")
+    @Transactional
     public void sendPrivateMessage(ChatMessageDTO dto, Principal principal) {
         String senderEmail = principal != null ? principal.getName() : null;
         if (senderEmail == null || senderEmail.isBlank()) {
@@ -100,7 +103,12 @@ public class ChatWebSocketController {
         User receiver = userRepository.findByUsername(receiverUsername)
                 .orElseThrow(() -> new ResourceNotFoundException("Receiver not found: " + receiverUsername));
 
-        ChatRoom chatRoom = chatRoomService.getOrCreatePrivateRoomByEmails(senderEmail, receiver.getEmail());
+        ChatRoom chatRoom = chatRoomService.findAcceptedPrivateRoom(sender.getId(), receiver.getId())
+                .orElseThrow(() -> new SecurityException("A private chat invitation must be accepted before messaging"));
+        if (!chatRoomService.isActiveParticipant(chatRoom.getId(), sender.getId())
+                || !chatRoomService.isActiveParticipant(chatRoom.getId(), receiver.getId())) {
+            throw new SecurityException("Both users must be active participants in this private chat");
+        }
         chatRoomService.enforcePremiumRoomAccess(sender, chatRoom);
 
         Message message = ChatMessageMapper.toEntity(dto, sender, chatRoom);

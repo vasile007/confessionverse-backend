@@ -9,14 +9,17 @@ import com.confessionverse.backend.exception.ResourceNotFoundException;
 import com.confessionverse.backend.model.ChatInvitation;
 import com.confessionverse.backend.model.ChatInvitationStatus;
 import com.confessionverse.backend.model.ChatRoom;
+import com.confessionverse.backend.model.ChatRoomType;
 import com.confessionverse.backend.model.Role;
 import com.confessionverse.backend.model.User;
 import com.confessionverse.backend.repository.ChatInvitationRepository;
 import com.confessionverse.backend.repository.ChatRoomMembershipRepository;
 import com.confessionverse.backend.repository.ChatRoomRepository;
+import com.confessionverse.backend.repository.UserRepository;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Isolation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -35,6 +38,8 @@ public class ChatInvitationService {
     private final ChatRoomService chatRoomService;
     private final SimpMessagingTemplate messagingTemplate;
     private final ChatInvitationProperties chatInvitationProperties;
+    private final UserRepository userRepository;
+    private final FreePlanLimitService freePlanLimitService;
 
     public ChatInvitationService(ChatInvitationRepository chatInvitationRepository,
                                  ChatRoomRepository chatRoomRepository,
@@ -42,7 +47,9 @@ public class ChatInvitationService {
                                  UserService userService,
                                  ChatRoomService chatRoomService,
                                  SimpMessagingTemplate messagingTemplate,
-                                 ChatInvitationProperties chatInvitationProperties) {
+                                 ChatInvitationProperties chatInvitationProperties,
+                                 UserRepository userRepository,
+                                 FreePlanLimitService freePlanLimitService) {
         this.chatInvitationRepository = chatInvitationRepository;
         this.chatRoomRepository = chatRoomRepository;
         this.chatRoomMembershipRepository = chatRoomMembershipRepository;
@@ -50,6 +57,72 @@ public class ChatInvitationService {
         this.chatRoomService = chatRoomService;
         this.messagingTemplate = messagingTemplate;
         this.chatInvitationProperties = chatInvitationProperties;
+        this.userRepository = userRepository;
+        this.freePlanLimitService = freePlanLimitService;
+    }
+
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public ChatInvitationActionResponseDTO requestPrivateConversation(String inviterEmail, String inviteeUsername) {
+        User inviter = userService.getUserEntityByEmail(inviterEmail);
+        User invitee = userService.getUserEntityByUsername(inviteeUsername);
+        if (inviter.getId().equals(invitee.getId())) {
+            throw new IllegalArgumentException("You cannot invite yourself");
+        }
+
+        // The lower user id is the canonical mutex for this unordered pair. Every
+        // A/B or B/A request locks the exact same row before inspecting or writing
+        // rooms/invitations, avoiding multi-row lock-order deadlocks.
+        Long pairLockUserId = Math.min(inviter.getId(), invitee.getId());
+        userRepository.findByIdForUpdate(pairLockUserId)
+                .orElseThrow(() -> new ResourceNotFoundException.NotFoundException("Private chat user not found"));
+        // Run the global expiration update only after the pair mutex is held;
+        // doing it first can acquire invitation gap locks in opposite order to
+        // the user/invitation writes and deadlock crossed requests.
+        expirePendingInvitations();
+
+        ChatRoom acceptedRoom = chatRoomService.findAcceptedPrivateRoom(inviter.getId(), invitee.getId())
+                .orElse(null);
+        if (acceptedRoom != null) {
+            return new ChatInvitationActionResponseDTO(
+                    "Private conversation already exists.",
+                    null,
+                    ChatInvitationStatus.ACCEPTED.name(),
+                    acceptedRoom.getId(),
+                    null,
+                    chatRoomService.toSummaryDto(acceptedRoom));
+        }
+
+        ChatInvitation pending = chatInvitationRepository.findPairInvitationsByStatus(
+                        inviter.getId(), invitee.getId(), ChatInvitationStatus.PENDING)
+                .stream()
+                .filter(invitation -> !isExpired(invitation))
+                .findFirst()
+                .orElse(null);
+        if (pending != null) {
+            boolean requesterCanRespond = pending.getInvitee() != null
+                    && inviter.getId().equals(pending.getInvitee().getId());
+            return new ChatInvitationActionResponseDTO(
+                    requesterCanRespond
+                            ? "A private request from this user is already waiting for your response."
+                            : "Private chat request already pending.",
+                    pending.getId(),
+                    pending.getStatus().name(),
+                    pending.getChatRoom().getId(),
+                    toDto(pending),
+                    null);
+        }
+
+        freePlanLimitService.enforceConversationCreateLimit(inviter);
+        ChatRoom room = chatRoomService.createGroupRoom(inviterEmail, null, null, ChatRoomType.DIRECT);
+        ChatInvitationActionResponseDTO created = createInvite(room.getId(), inviterEmail, inviteeUsername);
+        chatRoomService.deactivateMembership(room.getId(), inviter.getId());
+        return new ChatInvitationActionResponseDTO(
+                created.getMessage(),
+                created.getInviteId(),
+                created.getStatus(),
+                room.getId(),
+                created.getInvitation(),
+                chatRoomService.toSummaryDto(room));
     }
 
     @Transactional
@@ -59,6 +132,12 @@ public class ChatInvitationService {
                 .orElseThrow(() -> new ResourceNotFoundException.NotFoundException("ChatRoom not found"));
         User inviter = userService.getUserEntityByEmail(inviterEmail);
         User invitee = userService.getUserEntityByUsername(usernameToAdd);
+
+        if (chatRoom.getRoomType() == ChatRoomType.STANDARD
+                || chatRoom.getRoomType() == ChatRoomType.RANDOM
+                || (chatRoom.getUsername() != null && chatRoom.getUsername().startsWith("Random "))) {
+            throw new ForbiddenInviteException("Start a separate private chat request instead of inviting into this room.");
+        }
 
         boolean isAdmin = inviter.getRole() == Role.ADMIN;
         boolean isParticipant = chatRoomMembershipRepository

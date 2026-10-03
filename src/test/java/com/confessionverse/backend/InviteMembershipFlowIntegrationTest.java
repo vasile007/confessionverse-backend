@@ -13,7 +13,13 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.test.context.ActiveProfiles;
 
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.UUID;
 
 import static org.hamcrest.Matchers.hasItem;
@@ -27,6 +33,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @SpringBootTest
 @AutoConfigureMockMvc
+@ActiveProfiles("test")
 @Transactional
 class InviteMembershipFlowIntegrationTest {
 
@@ -130,7 +137,7 @@ class InviteMembershipFlowIntegrationTest {
     }
 
     @Test
-    void leavingRoomShouldNotAutoRejoinAfterLogoutLogin() throws Exception {
+    void communityMembershipIsRestoredAfterLeavingAndLoggingInAgain() throws Exception {
         String uid = UUID.randomUUID().toString().substring(0, 8);
         String username = "leave-rejoin-" + uid;
         String email = username + "@test.local";
@@ -157,7 +164,158 @@ class InviteMembershipFlowIntegrationTest {
         mockMvc.perform(get("/api/chatrooms")
                         .header("Authorization", "Bearer " + loginToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[*].id").value(not(hasItem((int) standardRoomId))));
+                .andExpect(jsonPath("$[*].id").value(hasItem((int) standardRoomId)));
+    }
+
+    @Test
+    void declinedPrivateInviteDoesNotLeaveAnAccessibleConversation() throws Exception {
+        String uid = UUID.randomUUID().toString().substring(0, 8);
+        String inviterName = "decline-inviter-" + uid;
+        String inviteeName = "decline-invitee-" + uid;
+        String inviterToken = registerAndReturnToken(inviterName, inviterName + "@test.local");
+        String inviteeToken = registerAndReturnToken(inviteeName, inviteeName + "@test.local");
+
+        MvcResult createResult = mockMvc.perform(post("/api/chatrooms")
+                        .header("Authorization", "Bearer " + inviterToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"usernameToAdd\":\"" + inviteeName + "\"}"))
+                .andExpect(status().isCreated())
+                .andReturn();
+        JsonNode createJson = objectMapper.readTree(createResult.getResponse().getContentAsString());
+        long roomId = createJson.path("chatRoom").path("id").asLong();
+        long inviteId = createJson.path("invite").path("id").asLong();
+
+        mockMvc.perform(post("/api/chat-invites/{inviteId}/decline", inviteId)
+                        .header("Authorization", "Bearer " + inviteeToken))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/chatrooms").header("Authorization", "Bearer " + inviterToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].id").value(not(hasItem((int) roomId))));
+        mockMvc.perform(get("/api/chatrooms").header("Authorization", "Bearer " + inviteeToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].id").value(not(hasItem((int) roomId))));
+    }
+
+    @Test
+    void duplicatePendingRequestReusesInvitationAndRoom() throws Exception {
+        String uid = UUID.randomUUID().toString().substring(0, 8);
+        String firstName = "pending-a-" + uid;
+        String secondName = "pending-b-" + uid;
+        String firstToken = registerAndReturnToken(firstName, firstName + "@test.local");
+        registerAndReturnToken(secondName, secondName + "@test.local");
+
+        JsonNode first = requestPrivate(firstToken, secondName);
+        JsonNode duplicate = requestPrivate(firstToken, secondName);
+
+        assertEquals(first.path("chatRoomId").asLong(), duplicate.path("chatRoomId").asLong());
+        assertEquals(first.path("invite").path("id").asLong(), duplicate.path("invite").path("id").asLong());
+        assertEquals("PENDING", duplicate.path("status").asText());
+    }
+
+    @Test
+    void crossedPendingRequestSurfacesOriginalInvitation() throws Exception {
+        String uid = UUID.randomUUID().toString().substring(0, 8);
+        String firstName = "cross-a-" + uid;
+        String secondName = "cross-b-" + uid;
+        String firstToken = registerAndReturnToken(firstName, firstName + "@test.local");
+        String secondToken = registerAndReturnToken(secondName, secondName + "@test.local");
+
+        JsonNode original = requestPrivate(firstToken, secondName);
+        JsonNode crossed = requestPrivate(secondToken, firstName);
+
+        assertEquals(original.path("chatRoomId").asLong(), crossed.path("chatRoomId").asLong());
+        assertEquals(original.path("invite").path("id").asLong(), crossed.path("invite").path("id").asLong());
+        mockMvc.perform(post("/api/chat-invites/{id}/accept", crossed.path("invite").path("id").asLong())
+                        .header("Authorization", "Bearer " + secondToken))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void acceptedConversationIsReusedAndDeclinedRequestCanBeRetried() throws Exception {
+        String uid = UUID.randomUUID().toString().substring(0, 8);
+        String firstName = "reuse-a-" + uid;
+        String secondName = "reuse-b-" + uid;
+        String firstToken = registerAndReturnToken(firstName, firstName + "@test.local");
+        String secondToken = registerAndReturnToken(secondName, secondName + "@test.local");
+
+        JsonNode initial = requestPrivate(firstToken, secondName);
+        long initialRoomId = initial.path("chatRoomId").asLong();
+        long initialInviteId = initial.path("invite").path("id").asLong();
+        mockMvc.perform(post("/api/chat-invites/{id}/decline", initialInviteId)
+                        .header("Authorization", "Bearer " + secondToken))
+                .andExpect(status().isOk());
+
+        JsonNode retried = requestPrivate(firstToken, secondName);
+        org.junit.jupiter.api.Assertions.assertNotEquals(initialRoomId, retried.path("chatRoomId").asLong());
+        mockMvc.perform(post("/api/chat-invites/{id}/accept", retried.path("invite").path("id").asLong())
+                        .header("Authorization", "Bearer " + secondToken))
+                .andExpect(status().isOk());
+
+        JsonNode reused = requestPrivate(firstToken, secondName);
+        assertEquals("ACCEPTED", reused.path("status").asText());
+        assertEquals(retried.path("chatRoomId").asLong(), reused.path("chatRoomId").asLong());
+    }
+
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void concurrentCrossedRequestsProduceOnePendingRelationshipAndOneActiveRoom() throws Exception {
+        String uid = UUID.randomUUID().toString().substring(0, 8);
+        String firstName = "concurrent-a-" + uid;
+        String secondName = "concurrent-b-" + uid;
+        String firstToken = registerAndReturnToken(firstName, firstName + "@test.local");
+        String secondToken = registerAndReturnToken(secondName, secondName + "@test.local");
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<JsonNode> firstRequest = executor.submit(() -> {
+                start.await();
+                return requestPrivate(firstToken, secondName);
+            });
+            Future<JsonNode> secondRequest = executor.submit(() -> {
+                start.await();
+                return requestPrivate(secondToken, firstName);
+            });
+            start.countDown();
+            JsonNode first = firstRequest.get();
+            JsonNode second = secondRequest.get();
+
+            assertEquals(first.path("chatRoomId").asLong(), second.path("chatRoomId").asLong());
+            assertEquals(first.path("invite").path("id").asLong(), second.path("invite").path("id").asLong());
+
+            String inviteeName = first.path("invite").path("inviteeUsername").asText();
+            String acceptToken = inviteeName.equals(firstName) ? firstToken : secondToken;
+            mockMvc.perform(post("/api/chat-invites/{id}/accept", first.path("invite").path("id").asLong())
+                            .header("Authorization", "Bearer " + acceptToken))
+                    .andExpect(status().isOk());
+
+            User firstUser = userRepository.findByUsername(firstName).orElseThrow();
+            User secondUser = userRepository.findByUsername(secondName).orElseThrow();
+            Integer activeRooms = jdbcTemplate.queryForObject("""
+                    SELECT COUNT(*) FROM (
+                        SELECT cu.chatroom_id
+                        FROM chatroom_users cu
+                        JOIN chat_room cr ON cr.id = cu.chatroom_id
+                        WHERE cr.room_type = 'DIRECT' AND cu.active = TRUE
+                          AND cu.user_id IN (?, ?)
+                        GROUP BY cu.chatroom_id
+                        HAVING COUNT(DISTINCT cu.user_id) = 2
+                    ) pair_rooms
+                    """, Integer.class, firstUser.getId(), secondUser.getId());
+            assertEquals(1, activeRooms);
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    private JsonNode requestPrivate(String token, String targetUsername) throws Exception {
+        MvcResult result = mockMvc.perform(post("/api/chatrooms")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"usernameToAdd\":\"" + targetUsername + "\"}"))
+                .andExpect(status().is2xxSuccessful())
+                .andReturn();
+        return objectMapper.readTree(result.getResponse().getContentAsString());
     }
 
     private String registerAndReturnToken(String username, String email) throws Exception {

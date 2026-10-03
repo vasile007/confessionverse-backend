@@ -1,37 +1,29 @@
 package com.confessionverse.backend;
 
-import com.confessionverse.backend.model.ChatRoomType;
+import com.confessionverse.backend.dto.responseDTO.RandomChatMatchDTO;
 import com.confessionverse.backend.model.Role;
-import com.confessionverse.backend.model.Subscription;
 import com.confessionverse.backend.model.User;
-import com.confessionverse.backend.repository.ChatRoomRepository;
-import com.confessionverse.backend.repository.SubscriptionRepository;
+import com.confessionverse.backend.repository.ChatRoomMembershipRepository;
 import com.confessionverse.backend.repository.UserRepository;
 import com.confessionverse.backend.security.JwtUtil;
 import com.confessionverse.backend.service.RandomChatMatchmakingService;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.test.context.ActiveProfiles;
 
-import java.time.Clock;
-import java.time.Instant;
-import java.time.ZoneId;
-import java.util.UUID;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
-import static org.hamcrest.Matchers.greaterThanOrEqualTo;
-import static org.hamcrest.Matchers.hasItem;
-import static org.hamcrest.Matchers.hasItems;
-import static org.hamcrest.Matchers.not;
-import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -39,185 +31,143 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @SpringBootTest
 @AutoConfigureMockMvc
+@ActiveProfiles("test")
 @Transactional
 class RandomChatJoinIntegrationTest {
 
-    @Autowired
-    private MockMvc mockMvc;
-
-    @Autowired
-    private UserRepository userRepository;
-
-    @Autowired
-    private SubscriptionRepository subscriptionRepository;
-
-    @Autowired
-    private ChatRoomRepository chatRoomRepository;
-
-    @Autowired
-    private JdbcTemplate jdbcTemplate;
-
-    @Autowired
-    private JwtUtil jwtUtil;
-
-    @Autowired
-    private RandomChatMatchmakingService matchmakingService;
-
-    private final List<Long> createdUserIds = new ArrayList<>();
-
-    @AfterEach
-    void clearWaitingUsers() {
-        createdUserIds.forEach(matchmakingService::cancel);
-    }
-
-    @MockBean
-    private Clock clock;
+    @Autowired private MockMvc mockMvc;
+    @Autowired private UserRepository userRepository;
+    @Autowired private ChatRoomMembershipRepository membershipRepository;
+    @Autowired private JwtUtil jwtUtil;
+    @Autowired private RandomChatMatchmakingService matchmakingService;
 
     @Test
-    void randomJoinShouldReturnStandardForFreeUserDaytime() throws Exception {
-        stubClock("2026-02-15T14:00:00Z");
-        User freeUser = createUser("random-free-day");
-
-        mockMvc.perform(post("/api/chatrooms/random-join")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"roomType\":\"STANDARD\"}")
-                        .header("Authorization", "Bearer " + tokenFor(freeUser)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("WAITING"))
-                .andExpect(jsonPath("$.roomType").value(ChatRoomType.STANDARD.name()));
-    }
-
-    @Test
-    void secondUserShouldMatchFirstWaitingUserWithoutSelfMatching() throws Exception {
-        stubClock("2026-02-15T14:00:00Z");
+    void firstAndSecondUsersJoinTheSamePersistentRandomRoom() {
         User first = createUser("random-first");
         User second = createUser("random-second");
 
-        mockMvc.perform(post("/api/chatrooms/random-join")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"roomType\":\"STANDARD\"}")
+        RandomChatMatchDTO firstJoin = matchmakingService.join(first);
+        RandomChatMatchDTO secondJoin = matchmakingService.join(second);
+
+        assertEquals("JOINED", firstJoin.getStatus());
+        assertEquals(firstJoin.getChatRoom().getId(), secondJoin.getChatRoom().getId());
+        assertEquals(2, membershipRepository.countByChatRoom_IdAndActiveTrue(firstJoin.getChatRoom().getId()));
+    }
+
+    @Test
+    void roomAcceptsSixAndSeventhIsAssignedElsewhere() {
+        List<RandomChatMatchDTO> joins = new ArrayList<>();
+        for (int index = 0; index < 7; index++) {
+            joins.add(matchmakingService.join(createUser("capacity-" + index)));
+        }
+
+        Long firstRoomId = joins.get(0).getChatRoom().getId();
+        for (int index = 1; index < 6; index++) {
+            assertEquals(firstRoomId, joins.get(index).getChatRoom().getId());
+        }
+        assertEquals(6, membershipRepository.countByChatRoom_IdAndActiveTrue(firstRoomId));
+        assertNotEquals(firstRoomId, joins.get(6).getChatRoom().getId());
+    }
+
+    @Test
+    void duplicateJoinIsIdempotent() {
+        User user = createUser("duplicate");
+        RandomChatMatchDTO first = matchmakingService.join(user);
+        RandomChatMatchDTO repeated = matchmakingService.join(user);
+
+        assertEquals(first.getChatRoom().getId(), repeated.getChatRoom().getId());
+        assertEquals(1, membershipRepository.countByChatRoom_IdAndActiveTrue(first.getChatRoom().getId()));
+    }
+
+    @Test
+    void leaveDeactivatesOnlyTheCallingMember() throws Exception {
+        User first = createUser("leave-first");
+        User second = createUser("leave-second");
+        Long roomId = matchmakingService.join(first).getChatRoom().getId();
+        matchmakingService.join(second);
+
+        mockMvc.perform(delete("/api/chatrooms/{roomId}/leave", roomId)
                         .header("Authorization", "Bearer " + tokenFor(first)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("WAITING"));
+                .andExpect(status().isNoContent());
 
-        mockMvc.perform(post("/api/chatrooms/random-join")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"roomType\":\"STANDARD\"}")
-                        .header("Authorization", "Bearer " + tokenFor(second)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("MATCHED"))
-                .andExpect(jsonPath("$.chatRoom.participants.length()").value(2))
-                .andExpect(jsonPath("$.chatRoom.participants[*].id").value(hasItems(
-                        first.getId().intValue(), second.getId().intValue())))
-                .andExpect(jsonPath("$.chatRoom.id").isNumber());
+        assertTrue(membershipRepository.findByChatRoom_IdAndUser_IdAndActiveTrue(roomId, first.getId()).isEmpty());
+        assertTrue(membershipRepository.findByChatRoom_IdAndUser_IdAndActiveTrue(roomId, second.getId()).isPresent());
     }
 
     @Test
-    void randomJoinCanReturnLateNightOnlyInsideNightWindow() throws Exception {
-        User freeUser = createUser("random-free-night");
+    void nextLeavesOldRoomAndAvoidsImmediateReassignment() throws Exception {
+        User user = createUser("next-user");
+        Long oldRoomId = matchmakingService.join(user).getChatRoom().getId();
 
-        stubClock("2026-02-15T14:00:00Z");
-        mockMvc.perform(post("/api/chatrooms/random-join")
+        mockMvc.perform(post("/api/chatrooms/random-next")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"roomType\":\"LATE_NIGHT\"}")
-                        .header("Authorization", "Bearer " + tokenFor(freeUser)))
+                        .content("{\"currentRoomId\":" + oldRoomId + "}")
+                        .header("Authorization", "Bearer " + tokenFor(user)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("JOINED"))
+                .andExpect(jsonPath("$.chatRoom.id").value(org.hamcrest.Matchers.not(oldRoomId.intValue())));
+
+        assertTrue(membershipRepository.findByChatRoom_IdAndUser_IdAndActiveTrue(oldRoomId, user.getId()).isEmpty());
+    }
+
+    @Test
+    void repeatedNextWithTheSameOldRoomIsIdempotent() {
+        User user = createUser("next-repeat");
+        Long oldRoomId = matchmakingService.join(user).getChatRoom().getId();
+
+        RandomChatMatchDTO firstNext = matchmakingService.next(user, oldRoomId);
+        RandomChatMatchDTO repeatedNext = matchmakingService.next(user, oldRoomId);
+
+        assertEquals(firstNext.getChatRoom().getId(), repeatedNext.getChatRoom().getId());
+        assertEquals(1, membershipRepository.countByChatRoom_IdAndActiveTrue(firstNext.getChatRoom().getId()));
+    }
+
+    @Test
+    void heartbeatRefreshesPersistentRandomMembershipLease() {
+        User user = createUser("heartbeat");
+        Long roomId = matchmakingService.join(user).getChatRoom().getId();
+
+        matchmakingService.heartbeat(user.getId(), roomId);
+
+        assertTrue(membershipRepository.findByChatRoom_IdAndUser_IdAndActiveTrue(roomId, user.getId())
+                .orElseThrow()
+                .getLastActiveAt() != null);
+    }
+
+    @Test
+    void nonMemberCannotReadOrSendToRandomRoom() throws Exception {
+        User member = createUser("room-member");
+        User stranger = createUser("room-stranger");
+        Long roomId = matchmakingService.join(member).getChatRoom().getId();
+
+        mockMvc.perform(get("/api/messages/chatroom/{roomId}", roomId)
+                        .header("Authorization", "Bearer " + tokenFor(stranger)))
                 .andExpect(status().isForbidden());
 
-        stubClock("2026-02-15T23:00:00Z");
-        mockMvc.perform(post("/api/chatrooms/random-join")
+        mockMvc.perform(post("/api/messages")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"roomType\":\"LATE_NIGHT\"}")
-                        .header("Authorization", "Bearer " + tokenFor(freeUser)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("WAITING"))
-                .andExpect(jsonPath("$.roomType").value(ChatRoomType.LATE_NIGHT.name()));
-    }
-
-    @Test
-    void randomJoinNeverReturnsHeartbeatToFreeUser() throws Exception {
-        stubClock("2026-02-15T23:00:00Z");
-        User freeUser = createUser("random-free-no-heartbeat");
-
-        mockMvc.perform(post("/api/chatrooms/random-join")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"roomType\":\"HEARTBEAT\"}")
-                        .header("Authorization", "Bearer " + tokenFor(freeUser)))
+                        .content("{\"chatRoomId\":" + roomId + ",\"content\":\"must not leak\"}")
+                        .header("Authorization", "Bearer " + tokenFor(stranger)))
                 .andExpect(status().isForbidden());
     }
 
     @Test
-    void randomJoinMayReturnHeartbeatForProUser() throws Exception {
-        stubClock("2026-02-15T14:00:00Z");
-        User proUser = createUser("random-pro-heartbeat");
-        createActiveSubscription(proUser);
-
+    void randomJoinRequiresAuthentication() throws Exception {
         mockMvc.perform(post("/api/chatrooms/random-join")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"roomType\":\"HEARTBEAT\"}")
-                        .header("Authorization", "Bearer " + tokenFor(proUser)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("WAITING"))
-                .andExpect(jsonPath("$.roomType").value(ChatRoomType.HEARTBEAT.name()));
-    }
-
-    @Test
-    void randomJoinCreatesAndReturnsStandardIfNoRoomsExist() throws Exception {
-        stubClock("2026-02-15T14:00:00Z");
-        jdbcTemplate.execute("DELETE FROM message");
-        jdbcTemplate.execute("DELETE FROM chat_invitations");
-        jdbcTemplate.execute("DELETE FROM chatroom_hidden_by");
-        jdbcTemplate.execute("DELETE FROM chatroom_users");
-        jdbcTemplate.execute("DELETE FROM chat_room");
-
-        User freeUser = createUser("random-create-standard");
-        mockMvc.perform(post("/api/chatrooms/random-join")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"roomType\":\"STANDARD\"}")
-                        .header("Authorization", "Bearer " + tokenFor(freeUser)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("WAITING"));
-
-        long standardRooms = chatRoomRepository.findAllByRoomTypeOrderByIdAsc(ChatRoomType.STANDARD).size();
-        org.junit.jupiter.api.Assertions.assertTrue(standardRooms >= 1);
-    }
-
-    @Test
-    void getChatroomsShouldReturnAtLeastOneAccessibleRoomForNormalUser() throws Exception {
-        stubClock("2026-02-15T14:00:00Z");
-        User freeUser = createUser("list-normal-user");
-
-        mockMvc.perform(get("/api/chatrooms")
-                        .header("Authorization", "Bearer " + tokenFor(freeUser)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(greaterThanOrEqualTo(1)))
-                .andExpect(jsonPath("$[*].roomType").value(hasItem(ChatRoomType.STANDARD.name())));
-    }
-
-    private void stubClock(String instantIso) {
-        when(clock.getZone()).thenReturn(ZoneId.of("UTC"));
-        when(clock.instant()).thenReturn(Instant.parse(instantIso));
+                        .content("{}"))
+                .andExpect(status().isForbidden());
     }
 
     private User createUser(String prefix) {
-        String uid = UUID.randomUUID().toString().substring(0, 8);
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
         User user = new User();
-        user.setUsername(prefix + "-" + uid);
-        user.setEmail(prefix + "-" + uid + "@test.local");
+        user.setUsername(prefix + "-" + suffix);
+        user.setEmail(prefix + "-" + suffix + "@test.local");
         user.setPasswordHash("test-hash");
         user.setRole(Role.USER);
         user.setPremium(false);
-        User saved = userRepository.save(user);
-        createdUserIds.add(saved.getId());
-        return saved;
-    }
-
-    private void createActiveSubscription(User user) {
-        Subscription sub = new Subscription();
-        sub.setUser(user);
-        sub.setSubscriber(user);
-        sub.setPlanType("PRO");
-        sub.setStatus("active");
-        subscriptionRepository.save(sub);
+        return userRepository.save(user);
     }
 
     private String tokenFor(User user) {

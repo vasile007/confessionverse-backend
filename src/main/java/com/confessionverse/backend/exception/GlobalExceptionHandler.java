@@ -81,8 +81,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<?> handleAccessDenied(AccessDeniedException ex) {
         log.warn("Access denied: {}", ex.getMessage());
-        String message = (ex.getMessage() == null || ex.getMessage().isBlank()) ? "Access denied" : ex.getMessage();
-        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", message));
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", "Access denied"));
     }
 
     @ExceptionHandler(SecurityException.class)
@@ -164,4 +163,3 @@ public class GlobalExceptionHandler {
                 .body(Map.of("error", "Internal server error occurred"));
     }
 }
-

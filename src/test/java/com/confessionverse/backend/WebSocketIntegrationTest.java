@@ -84,7 +84,7 @@ public class WebSocketIntegrationTest {
         StompSessionHandler sessionHandler = new StompSessionHandlerAdapter() {
             @Override
             public void afterConnected(StompSession session, StompHeaders connectedHeaders) {
-                session.subscribe("/topic/chat.send", new StompFrameHandler() {
+                session.subscribe("/user/queue/messages", new StompFrameHandler() {
                     @Override
                     public Type getPayloadType(StompHeaders headers) {
                         return Map.class;

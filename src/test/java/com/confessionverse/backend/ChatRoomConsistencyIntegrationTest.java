@@ -51,7 +51,7 @@ class ChatRoomConsistencyIntegrationTest {
     private ObjectMapper objectMapper;
 
     @Test
-    void createWithInviteTwiceShouldCreateDistinctRooms() throws Exception {
+    void createWithInviteTwiceShouldReusePendingRoom() throws Exception {
         User creator = createUser("pair-creator", Role.USER);
         User target = createUser("pair-target", Role.USER);
         String token = tokenFor(creator);
@@ -79,7 +79,7 @@ class ChatRoomConsistencyIntegrationTest {
                 .andReturn();
 
         long secondId = responseId(second);
-        org.junit.jupiter.api.Assertions.assertNotEquals(firstId, secondId);
+        org.junit.jupiter.api.Assertions.assertEquals(firstId, secondId);
     }
 
     @Test
@@ -230,6 +230,9 @@ class ChatRoomConsistencyIntegrationTest {
         JsonNode idNode = node.get("id");
         if (idNode == null || idNode.isNull()) {
             idNode = node.path("chatRoom").path("id");
+        }
+        if (idNode == null || idNode.isMissingNode() || idNode.isNull()) {
+            idNode = node.get("chatRoomId");
         }
         if (idNode == null || idNode.isMissingNode() || idNode.isNull()) {
             throw new IllegalStateException("Could not resolve chat room id from response: " + node);

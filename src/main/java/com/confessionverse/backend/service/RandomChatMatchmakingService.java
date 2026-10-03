@@ -3,31 +3,33 @@ package com.confessionverse.backend.service;
 import com.confessionverse.backend.dto.responseDTO.ChatRoomSummaryDTO;
 import com.confessionverse.backend.dto.responseDTO.RandomChatMatchDTO;
 import com.confessionverse.backend.model.ChatRoom;
+import com.confessionverse.backend.model.ChatRoomMembership;
 import com.confessionverse.backend.model.ChatRoomType;
 import com.confessionverse.backend.model.User;
-import com.confessionverse.backend.repository.ChatRoomRepository;
 import com.confessionverse.backend.repository.ChatRoomMembershipRepository;
+import com.confessionverse.backend.repository.ChatRoomRepository;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Clock;
 import java.time.Duration;
-import java.time.Instant;
-import java.util.ArrayDeque;
-import java.util.EnumMap;
-import java.util.HashMap;
-import java.util.Iterator;
+import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 
+/** Assigns authenticated users to persistent, capacity-limited random group rooms. */
 @Service
 public class RandomChatMatchmakingService {
-    private static final Duration WAITING_TTL = Duration.ofMinutes(5);
+    public static final int MAX_RANDOM_ROOM_MEMBERS = 6;
+    private static final Duration MEMBERSHIP_LEASE = Duration.ofMinutes(5);
+    private static final List<ChatRoomType> LEGACY_RANDOM_TYPES = List.of(
+            ChatRoomType.STANDARD, ChatRoomType.LATE_NIGHT, ChatRoomType.HEARTBEAT);
 
-    private final Map<ChatRoomType, ArrayDeque<WaitingUser>> queues = new EnumMap<>(ChatRoomType.class);
-    private final Map<Long, WaitingUser> waitingByUser = new HashMap<>();
     private final ChatRoomRepository chatRoomRepository;
     private final ChatRoomService chatRoomService;
     private final ChatRoomMembershipRepository membershipRepository;
@@ -47,139 +49,175 @@ public class RandomChatMatchmakingService {
     }
 
     @Transactional
-    public synchronized RandomChatMatchDTO join(User user, ChatRoomType roomType) {
-        validateCategory(roomType);
-        chatRoomService.enforcePremiumRoomAccess(user, roomType);
-        removeWaitingUser(user.getId());
-        removeExpired();
-
-        ChatRoom existingConversation = membershipRepository
-                .findAllByUser_IdAndActiveTrueAndHiddenAtIsNull(user.getId()).stream()
-                .map(membership -> membership.getChatRoom())
-                .filter(room -> room != null
-                        && roomType == room.getRoomType()
-                        && room.getUsername() != null
-                        && room.getUsername().startsWith("Random ")
-                        && membershipRepository.findAllByChatRoom_IdAndActiveTrue(room.getId()).size() == 2)
-                .findFirst()
-                .orElse(null);
-        if (existingConversation != null) {
-            return new RandomChatMatchDTO(
-                    "MATCHED", roomType.name(), chatRoomService.toSummaryDto(existingConversation));
-        }
-
-        ArrayDeque<WaitingUser> queue = queues.computeIfAbsent(roomType, ignored -> new ArrayDeque<>());
-        WaitingUser partner = null;
-        while (!queue.isEmpty() && partner == null) {
-            WaitingUser candidate = queue.removeFirst();
-            waitingByUser.remove(candidate.user().getId());
-            if (!candidate.user().getId().equals(user.getId())) {
-                partner = candidate;
-            }
-        }
-
-        if (partner == null) {
-            WaitingUser waiting = new WaitingUser(user, roomType, Instant.now(clock));
-            queue.addLast(waiting);
-            waitingByUser.put(user.getId(), waiting);
-            return new RandomChatMatchDTO("WAITING", roomType.name(), null);
-        }
-
-        ChatRoom room = new ChatRoom();
-        room.setCreator(partner.user());
-        room.setRoomType(roomType);
-        room.setUsername("Random " + categoryName(roomType));
-        room = chatRoomRepository.save(room);
-        chatRoomService.activateMembership(room.getId(), partner.user().getId());
-        chatRoomService.activateMembership(room.getId(), user.getId());
-
-        ChatRoomSummaryDTO summary = chatRoomService.toSummaryDto(room);
-        RandomChatMatchDTO result = new RandomChatMatchDTO("MATCHED", roomType.name(), summary);
-        messagingTemplate.convertAndSendToUser(partner.user().getEmail(), "/queue/random-chat", result);
-        messagingTemplate.convertAndSendToUser(user.getEmail(), "/queue/random-chat", result);
-        return result;
+    public RandomChatMatchDTO join(User user) {
+        return assign(user, null, true);
     }
 
-    public synchronized void cancel(Long userId) {
-        removeWaitingUser(userId);
-    }
-
-    public synchronized void disconnect(String email) {
-        if (email == null) return;
-        waitingByUser.values().stream()
-                .filter(waiting -> email.equalsIgnoreCase(waiting.user().getEmail()))
-                .map(waiting -> waiting.user().getId())
-                .findFirst()
-                .ifPresent(this::removeWaitingUser);
+    /** Backwards-compatible signature for older callers; category selection is intentionally ignored. */
+    @Transactional
+    public RandomChatMatchDTO join(User user, ChatRoomType ignoredRoomType) {
+        return join(user);
     }
 
     @Transactional
-    public synchronized boolean leaveConversation(Long roomId, Long userId) {
+    public RandomChatMatchDTO next(User user, Long currentRoomId) {
+        lockMatchmaking();
+        expireStaleMemberships();
+        List<ChatRoomMembership> active = activeRandomMemberships(user.getId());
+        if (currentRoomId != null && active.stream()
+                .noneMatch(membership -> currentRoomId.equals(membership.getChatRoom().getId()))) {
+            // A repeated/late Next request returns the room assigned by the first committed request.
+            if (!active.isEmpty()) {
+                return joined(active.get(0).getChatRoom());
+            }
+        }
+        Long roomToLeave = currentRoomId;
+        if (roomToLeave == null && !active.isEmpty()) {
+            roomToLeave = active.get(0).getChatRoom().getId();
+        }
+        if (roomToLeave != null) {
+            leaveConversation(roomToLeave, user.getId());
+        }
+        return assign(user, roomToLeave, false);
+    }
+
+    private RandomChatMatchDTO assign(User user, Long excludedRoomId, boolean returnExisting) {
+        // The persistent Community row is a database-backed matchmaking mutex. It serializes
+        // capacity decisions across concurrent requests and backend instances.
+        lockMatchmaking();
+        expireStaleMemberships();
+
+        List<ChatRoomMembership> active = activeRandomMemberships(user.getId());
+        if (returnExisting && !active.isEmpty()) {
+            active.stream().skip(1).forEach(this::deactivate);
+            return joined(active.get(0).getChatRoom());
+        }
+        active.forEach(this::deactivate);
+
+        List<ChatRoom> available = chatRoomRepository.findAvailableRandomRoomsForUpdate(
+                ChatRoomType.RANDOM, excludedRoomId, MAX_RANDOM_ROOM_MEMBERS - 1L);
+        ChatRoom room = available.isEmpty() ? createRandomRoom(user) : available.get(0);
+
+        if (membershipRepository.countByChatRoom_IdAndActiveTrue(room.getId()) >= MAX_RANDOM_ROOM_MEMBERS) {
+            room = createRandomRoom(user);
+        }
+        chatRoomService.activateMembership(room.getId(), user.getId());
+        notifyRoomUpdated(room);
+        return joined(room);
+    }
+
+    @Transactional
+    public boolean leaveConversation(Long roomId, Long userId) {
         ChatRoom room = chatRoomRepository.findById(roomId).orElse(null);
-        if (room == null || room.getUsername() == null || !room.getUsername().startsWith("Random ")) {
+        if (room == null || !isRandomRoom(room)) {
             return false;
         }
-        if (!membershipRepository.existsByChatRoom_IdAndUser_IdAndActiveTrue(roomId, userId)) {
-            throw new AccessDeniedException("Only participants can leave this chat");
+        ChatRoomMembership membership = membershipRepository
+                .findByChatRoom_IdAndUser_IdAndActiveTrue(roomId, userId)
+                .orElseThrow(() -> new AccessDeniedException("Only active members can leave this random chat"));
+        deactivate(membership);
+        if (membership.getUser() != null) {
+            String email = membership.getUser().getEmail();
+            afterCommit(() -> messagingTemplate.convertAndSendToUser(email, "/queue/random-chat",
+                    Map.of("status", "LEFT", "chatRoomId", roomId)));
         }
-        membershipRepository.findAllByChatRoom_IdAndActiveTrue(roomId).forEach(membership -> {
-            membership.setActive(false);
-            membership.setLeftAt(java.time.LocalDateTime.now(clock));
-            membershipRepository.save(membership);
-            if (membership.getUser() != null) {
-                messagingTemplate.convertAndSendToUser(
-                        membership.getUser().getEmail(),
-                        "/queue/random-chat",
-                        Map.of("status", "ENDED", "chatRoomId", roomId));
-            }
-        });
+        notifyRoomUpdated(room);
         return true;
     }
 
+    @Transactional
+    public void heartbeat(Long userId, Long roomId) {
+        if (roomId == null) {
+            throw new IllegalArgumentException("roomId is required");
+        }
+        ChatRoom room = chatRoomRepository.findById(roomId)
+                .orElseThrow(() -> new AccessDeniedException("Random room is not accessible"));
+        if (!isRandomRoom(room)) {
+            throw new AccessDeniedException("Random room is not accessible");
+        }
+        int updated = membershipRepository.touchActiveMembership(roomId, userId, LocalDateTime.now(clock));
+        if (updated != 1) {
+            throw new AccessDeniedException("Only active members can refresh this random chat");
+        }
+    }
+
     @Scheduled(fixedDelay = 60000)
-    public synchronized void evictExpiredWaitingUsers() {
-        removeExpired();
+    @Transactional
+    public void cleanupStaleMemberships() {
+        lockMatchmaking();
+        expireStaleMemberships();
     }
 
-    private void removeExpired() {
-        Instant cutoff = Instant.now(clock).minus(WAITING_TTL);
-        Iterator<Map.Entry<Long, WaitingUser>> iterator = waitingByUser.entrySet().iterator();
-        while (iterator.hasNext()) {
-            WaitingUser waiting = iterator.next().getValue();
-            if (waiting.joinedAt().isBefore(cutoff)) {
-                ArrayDeque<WaitingUser> queue = queues.get(waiting.roomType());
-                if (queue != null) queue.remove(waiting);
-                iterator.remove();
+    /** Retained for API compatibility; group random chat has no waiting queue. */
+    public void cancel(Long userId) {
+    }
+
+    public void disconnect(String email) {
+        // Membership survives transient socket disconnects. Leaving is an explicit user action.
+    }
+
+    private ChatRoom createRandomRoom(User creator) {
+        ChatRoom room = new ChatRoom();
+        room.setCreator(creator);
+        room.setRoomType(ChatRoomType.RANDOM);
+        room.setUsername("Random Chat");
+        return chatRoomRepository.saveAndFlush(room);
+    }
+
+    private List<ChatRoomMembership> activeRandomMemberships(Long userId) {
+        return membershipRepository.findActiveRandomMemberships(userId, ChatRoomType.RANDOM, LEGACY_RANDOM_TYPES);
+    }
+
+    private boolean isRandomRoom(ChatRoom room) {
+        return room.getRoomType() == ChatRoomType.RANDOM
+                || (room.getUsername() != null && room.getUsername().startsWith("Random "));
+    }
+
+    private void deactivate(ChatRoomMembership membership) {
+        membership.setActive(false);
+        membership.setLeftAt(LocalDateTime.now(clock));
+        membershipRepository.save(membership);
+    }
+
+    private void lockMatchmaking() {
+        chatRoomService.ensureStandardRoomExists();
+        chatRoomRepository.findAllByRoomTypeForUpdate(ChatRoomType.STANDARD);
+    }
+
+    private int expireStaleMemberships() {
+        LocalDateTime now = LocalDateTime.now(clock);
+        return membershipRepository.deactivateStaleRandomMemberships(
+                ChatRoomType.RANDOM,
+                LEGACY_RANDOM_TYPES,
+                now.minus(MEMBERSHIP_LEASE),
+                now);
+    }
+
+    private RandomChatMatchDTO joined(ChatRoom room) {
+        return new RandomChatMatchDTO("JOINED", ChatRoomType.RANDOM.name(), chatRoomService.toSummaryDto(room));
+    }
+
+    private void notifyRoomUpdated(ChatRoom room) {
+        ChatRoomSummaryDTO summary = chatRoomService.toSummaryDto(room);
+        List<String> memberEmails = membershipRepository.findAllByChatRoom_IdAndActiveTrue(room.getId()).stream()
+                .map(ChatRoomMembership::getUser)
+                .filter(java.util.Objects::nonNull)
+                .map(User::getEmail)
+                .toList();
+        afterCommit(() -> memberEmails.forEach(email -> messagingTemplate.convertAndSendToUser(
+                email, "/queue/random-chat", Map.of("status", "ROOM_UPDATED", "chatRoom", summary))));
+    }
+
+    private void afterCommit(Runnable action) {
+        if (!TransactionSynchronizationManager.isActualTransactionActive()) {
+            action.run();
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                action.run();
             }
-        }
+        });
     }
-
-    private void removeWaitingUser(Long userId) {
-        WaitingUser existing = waitingByUser.remove(userId);
-        if (existing == null) return;
-        ArrayDeque<WaitingUser> queue = queues.get(existing.roomType());
-        if (queue != null) queue.remove(existing);
-    }
-
-    private void validateCategory(ChatRoomType roomType) {
-        if (roomType != ChatRoomType.STANDARD
-                && roomType != ChatRoomType.LATE_NIGHT
-                && roomType != ChatRoomType.HEARTBEAT) {
-            throw new IllegalArgumentException("Unsupported random chat room type");
-        }
-        if (roomType == ChatRoomType.LATE_NIGHT && !chatRoomService.isLateNightAvailable()) {
-            throw new AccessDeniedException("Late Night is active only at night (22:00 - 06:00).");
-        }
-    }
-
-    private String categoryName(ChatRoomType roomType) {
-        return switch (roomType) {
-            case STANDARD -> "General";
-            case LATE_NIGHT -> "Late Night";
-            case HEARTBEAT -> "Premium Room";
-            default -> roomType.name();
-        };
-    }
-
-    private record WaitingUser(User user, ChatRoomType roomType, Instant joinedAt) {}
 }

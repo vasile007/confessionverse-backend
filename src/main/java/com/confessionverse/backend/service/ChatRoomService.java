@@ -46,7 +46,7 @@ import java.util.stream.Collectors;
  */
 @Service
 public class ChatRoomService implements OwnableService<ChatRoom> {
-    public static final String STANDARD_ROOM_NAME = "Standard";
+    public static final String STANDARD_ROOM_NAME = "Community";
     public static final String LATE_NIGHT_ROOM_NAME = "Late Night";
     public static final String HEARTBEAT_ROOM_NAME = "Heartbeat";
 
@@ -168,6 +168,12 @@ public class ChatRoomService implements OwnableService<ChatRoom> {
                 });
     }
 
+    public Optional<ChatRoom> findAcceptedPrivateRoom(Long user1Id, Long user2Id) {
+        return chatRoomRepository.findActivePrivateRooms(user1Id, user2Id, ChatRoomType.DIRECT)
+                .stream()
+                .findFirst();
+    }
+
     /**
      * Retrieves the ChatRoom entity by ID or throws if it does not exist.
      */
@@ -249,8 +255,8 @@ public class ChatRoomService implements OwnableService<ChatRoom> {
         User creator = userRepository.findByEmail(creatorEmail)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + creatorEmail));
         ChatRoomType requestedType = roomType == null ? ChatRoomType.DIRECT : roomType;
-        if (requestedType == ChatRoomType.STANDARD) {
-            throw new IllegalArgumentException("STANDARD room is system-managed and cannot be created manually.");
+        if (requestedType == ChatRoomType.STANDARD || requestedType == ChatRoomType.RANDOM) {
+            throw new IllegalArgumentException(requestedType + " rooms are system-managed and cannot be created manually.");
         }
         enforcePremiumRoomAccess(creator, requestedType);
 
@@ -276,7 +282,7 @@ public class ChatRoomService implements OwnableService<ChatRoom> {
 
     public List<ChatRoomSummaryDTO> getVisibleRooms(User currentUser, String scope) {
         ensureBaseRoomsExist();
-        ensureStandardMembership(currentUser);
+        ensureStandardMembership(currentUser, true);
         boolean includeAllForAdmin = currentUser.getRole() == Role.ADMIN && "all".equalsIgnoreCase(scope);
         if (includeAllForAdmin) {
             return chatRoomRepository.findAll().stream()
@@ -342,6 +348,7 @@ public class ChatRoomService implements OwnableService<ChatRoom> {
         membership.setActive(true);
         membership.setLeftAt(null);
         membership.setHiddenAt(null);
+        membership.setLastActiveAt(LocalDateTime.now(clock));
         chatRoomMembershipRepository.save(membership);
     }
 
@@ -350,6 +357,16 @@ public class ChatRoomService implements OwnableService<ChatRoom> {
             return false;
         }
         return chatRoomMembershipRepository.existsByChatRoom_IdAndUser_IdAndActiveTrue(chatRoomId, userId);
+    }
+
+    @Transactional
+    public void deactivateMembership(Long chatRoomId, Long userId) {
+        chatRoomMembershipRepository.findByChatRoom_IdAndUser_IdAndActiveTrue(chatRoomId, userId)
+                .ifPresent(membership -> {
+                    membership.setActive(false);
+                    membership.setLeftAt(LocalDateTime.now(clock));
+                    chatRoomMembershipRepository.save(membership);
+                });
     }
 
     @Transactional
@@ -404,13 +421,30 @@ public class ChatRoomService implements OwnableService<ChatRoom> {
 
     @Transactional
     public ChatRoom ensureStandardRoomExists() {
-        return ensureRoomTypeExists(ChatRoomType.STANDARD, STANDARD_ROOM_NAME);
+        ChatRoom room = chatRoomRepository.findAllByRoomTypeOrderByIdAsc(ChatRoomType.STANDARD).stream()
+                .filter(candidate -> candidate.getUsername() == null
+                        || !candidate.getUsername().startsWith("Random "))
+                .findFirst()
+                .orElseGet(() -> {
+                    ChatRoom created = new ChatRoom();
+                    created.setRoomType(ChatRoomType.STANDARD);
+                    created.setUsername(STANDARD_ROOM_NAME);
+                    created.setParticipants(new LinkedHashSet<>());
+                    created.setHiddenBy(new HashSet<>());
+                    return chatRoomRepository.save(created);
+                });
+        normalizeCollections(room);
+        if (!STANDARD_ROOM_NAME.equals(room.getUsername())) {
+            room.setUsername(STANDARD_ROOM_NAME);
+            return chatRoomRepository.save(room);
+        }
+        return room;
     }
 
     @Transactional
     public Map<ChatRoomType, ChatRoom> ensureBaseRoomsExist() {
         Map<ChatRoomType, ChatRoom> rooms = new HashMap<>();
-        rooms.put(ChatRoomType.STANDARD, ensureRoomTypeExists(ChatRoomType.STANDARD, STANDARD_ROOM_NAME));
+        rooms.put(ChatRoomType.STANDARD, ensureStandardRoomExists());
         rooms.put(ChatRoomType.LATE_NIGHT, ensureRoomTypeExists(ChatRoomType.LATE_NIGHT, LATE_NIGHT_ROOM_NAME));
         rooms.put(ChatRoomType.HEARTBEAT, ensureRoomTypeExists(ChatRoomType.HEARTBEAT, HEARTBEAT_ROOM_NAME));
         return rooms;
@@ -657,6 +691,7 @@ public class ChatRoomService implements OwnableService<ChatRoom> {
             membership.setJoinedAt(LocalDateTime.now());
             membership.setLeftAt(null);
             membership.setHiddenAt(null);
+            membership.setLastActiveAt(LocalDateTime.now(clock));
             chatRoomMembershipRepository.save(membership);
             return true;
         }
@@ -671,6 +706,10 @@ public class ChatRoomService implements OwnableService<ChatRoom> {
             membership.setActive(true);
             membership.setLeftAt(null);
             membership.setHiddenAt(null);
+            changed = true;
+        }
+        if (membership.getLastActiveAt() == null) {
+            membership.setLastActiveAt(membership.getJoinedAt());
             changed = true;
         }
         if (changed) {
@@ -694,4 +733,3 @@ public class ChatRoomService implements OwnableService<ChatRoom> {
     }
 
 }
-

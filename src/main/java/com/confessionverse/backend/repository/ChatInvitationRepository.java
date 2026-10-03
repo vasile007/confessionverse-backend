@@ -26,6 +26,18 @@ public interface ChatInvitationRepository extends JpaRepository<ChatInvitation, 
 
     List<ChatInvitation> findByStatus(ChatInvitationStatus status);
 
+    @Query("""
+            SELECT ci FROM ChatInvitation ci
+            WHERE ci.status = :status
+              AND ((ci.inviter.id = :firstUserId AND ci.invitee.id = :secondUserId)
+                   OR (ci.inviter.id = :secondUserId AND ci.invitee.id = :firstUserId))
+            ORDER BY ci.createdAt ASC, ci.id ASC
+            """)
+    List<ChatInvitation> findPairInvitationsByStatus(
+            @Param("firstUserId") Long firstUserId,
+            @Param("secondUserId") Long secondUserId,
+            @Param("status") ChatInvitationStatus status);
+
     @Modifying
     @Query("UPDATE ChatInvitation ci SET ci.status = :expiredStatus, ci.respondedAt = :now " +
             "WHERE ci.status = :pendingStatus AND ci.createdAt < :cutoff")

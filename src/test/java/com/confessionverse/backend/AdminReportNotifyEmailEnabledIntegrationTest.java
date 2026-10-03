@@ -5,12 +5,14 @@ import com.confessionverse.backend.repository.ConfessionReportRepository;
 import com.confessionverse.backend.repository.ConfessionRepository;
 import com.confessionverse.backend.repository.UserRepository;
 import com.confessionverse.backend.security.JwtUtil;
+import com.confessionverse.backend.service.EmailService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.UUID;
@@ -38,6 +40,9 @@ class AdminReportNotifyEmailEnabledIntegrationTest {
 
     @Autowired
     private JwtUtil jwtUtil;
+
+    @MockBean
+    private EmailService emailService;
 
     @Test
     void notifyReturnsEmailedTrueWhenServiceEnabled() throws Exception {
