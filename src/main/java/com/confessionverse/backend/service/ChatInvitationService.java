@@ -20,6 +20,8 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.annotation.Isolation;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -342,32 +344,36 @@ public class ChatInvitationService {
         if (invitation.getInvitee() == null || invitation.getInvitee().getEmail() == null) {
             return;
         }
-        messagingTemplate.convertAndSendToUser(
-                invitation.getInvitee().getEmail(),
+        String inviteeEmail = invitation.getInvitee().getEmail();
+        Long invitationId = invitation.getId();
+        dispatchAfterCommit(() -> messagingTemplate.convertAndSendToUser(
+                inviteeEmail,
                 "/queue/chat-invites",
-                Map.of("event", "CHAT_INVITE_CREATED", "invitationId", invitation.getId())
-        );
+                Map.of("event", "CHAT_INVITE_CREATED", "invitationId", invitationId)));
     }
 
     private void notifyInviteAccepted(ChatInvitation invitation) {
+        Long invitationId = invitation.getId();
+        Long chatRoomId = invitation.getChatRoom().getId();
         if (invitation.getInviter() != null && invitation.getInviter().getEmail() != null) {
-            messagingTemplate.convertAndSendToUser(
-                    invitation.getInviter().getEmail(),
-                    "/queue/chat-invites",
-                    Map.of("event", "CHAT_INVITE_ACCEPTED", "invitationId", invitation.getId())
-            );
-            messagingTemplate.convertAndSendToUser(
-                    invitation.getInviter().getEmail(),
-                    "/queue/chatrooms",
-                    Map.of("event", "CHATROOM_REFRESH", "chatRoomId", invitation.getChatRoom().getId())
-            );
+            String inviterEmail = invitation.getInviter().getEmail();
+            dispatchAfterCommit(() -> {
+                messagingTemplate.convertAndSendToUser(
+                        inviterEmail,
+                        "/queue/chat-invites",
+                        Map.of("event", "CHAT_INVITE_ACCEPTED", "invitationId", invitationId));
+                messagingTemplate.convertAndSendToUser(
+                        inviterEmail,
+                        "/queue/chatrooms",
+                        Map.of("event", "CHATROOM_REFRESH", "chatRoomId", chatRoomId));
+            });
         }
         if (invitation.getInvitee() != null && invitation.getInvitee().getEmail() != null) {
-            messagingTemplate.convertAndSendToUser(
-                    invitation.getInvitee().getEmail(),
+            String inviteeEmail = invitation.getInvitee().getEmail();
+            dispatchAfterCommit(() -> messagingTemplate.convertAndSendToUser(
+                    inviteeEmail,
                     "/queue/chatrooms",
-                    Map.of("event", "CHATROOM_REFRESH", "chatRoomId", invitation.getChatRoom().getId())
-            );
+                    Map.of("event", "CHATROOM_REFRESH", "chatRoomId", chatRoomId)));
         }
     }
 
@@ -375,11 +381,25 @@ public class ChatInvitationService {
         if (invitation.getInviter() == null || invitation.getInviter().getEmail() == null) {
             return;
         }
-        messagingTemplate.convertAndSendToUser(
-                invitation.getInviter().getEmail(),
+        String inviterEmail = invitation.getInviter().getEmail();
+        Long invitationId = invitation.getId();
+        dispatchAfterCommit(() -> messagingTemplate.convertAndSendToUser(
+                inviterEmail,
                 "/queue/chat-invites",
-                Map.of("event", "CHAT_INVITE_DECLINED", "invitationId", invitation.getId())
-        );
+                Map.of("event", "CHAT_INVITE_DECLINED", "invitationId", invitationId)));
+    }
+
+    private void dispatchAfterCommit(Runnable notification) {
+        if (!TransactionSynchronizationManager.isActualTransactionActive()) {
+            notification.run();
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                notification.run();
+            }
+        });
     }
 
     @Transactional

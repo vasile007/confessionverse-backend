@@ -68,7 +68,8 @@ class InviteMembershipFlowIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "usernameToAdd": "%s"
+                                  "usernameToAdd": "%s",
+                                  "roomType": "DIRECT"
                                 }
                                 """.formatted(inviteeName)))
                 .andExpect(status().isCreated())
@@ -77,6 +78,16 @@ class InviteMembershipFlowIntegrationTest {
         JsonNode createJson = objectMapper.readTree(createResult.getResponse().getContentAsString());
         long roomId = createJson.path("chatRoom").path("id").asLong();
         long inviteId = createJson.path("invite").path("id").asLong();
+
+        mockMvc.perform(get("/api/chat-invites/me")
+                        .header("Authorization", "Bearer " + inviteeToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value(inviteId))
+                .andExpect(jsonPath("$[0].inviterUsername").value(inviterName))
+                .andExpect(jsonPath("$[0].inviteeUsername").value(inviteeName))
+                .andExpect(jsonPath("$[0].status").value("PENDING"))
+                .andExpect(jsonPath("$[0].inviterEmail").doesNotExist())
+                .andExpect(jsonPath("$[0].inviteeEmail").doesNotExist());
 
         mockMvc.perform(post("/api/chat-invites/{inviteId}/accept", inviteId)
                         .header("Authorization", "Bearer " + inviteeToken))

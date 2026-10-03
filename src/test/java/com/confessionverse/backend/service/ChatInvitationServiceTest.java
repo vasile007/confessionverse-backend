@@ -14,6 +14,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.LinkedHashSet;
 import java.time.LocalDateTime;
@@ -140,6 +142,48 @@ class ChatInvitationServiceTest {
         assertNotNull(result.getInvitation());
         assertEquals(99L, result.getInvitation().getId());
         verify(chatInvitationRepository, never()).save(any(ChatInvitation.class));
+    }
+
+    @Test
+    void createInviteNotifiesRecipientOnlyAfterTransactionCommit() {
+        User inviter = user(1L, "alice", "alice@test.com");
+        User invitee = user(2L, "bob", "bob@test.com");
+        ChatRoom room = new ChatRoom();
+        room.setId(10L);
+        room.setRoomType(ChatRoomType.DIRECT);
+
+        when(chatRoomRepository.findById(10L)).thenReturn(Optional.of(room));
+        when(userService.getUserEntityByEmail("alice@test.com")).thenReturn(inviter);
+        when(userService.getUserEntityByUsername("bob")).thenReturn(invitee);
+        when(chatRoomMembershipRepository.existsByChatRoom_IdAndUser_IdAndActiveTrue(10L, 1L)).thenReturn(true);
+        when(chatRoomMembershipRepository.existsByChatRoom_IdAndUser_IdAndActiveTrue(10L, 2L)).thenReturn(false);
+        when(chatInvitationRepository.findFirstByChatRoom_IdAndInvitee_IdAndStatus(10L, 2L, ChatInvitationStatus.PENDING))
+                .thenReturn(Optional.empty());
+        when(chatInvitationRepository.save(any(ChatInvitation.class))).thenAnswer(invocation -> {
+            ChatInvitation saved = invocation.getArgument(0);
+            saved.setId(55L);
+            return saved;
+        });
+
+        TransactionSynchronizationManager.initSynchronization();
+        TransactionSynchronizationManager.setActualTransactionActive(true);
+        try {
+            service.createInvite(10L, "alice@test.com", "bob");
+
+            verifyNoInteractions(messagingTemplate);
+            for (TransactionSynchronization synchronization : TransactionSynchronizationManager.getSynchronizations()) {
+                synchronization.afterCommit();
+            }
+            verify(messagingTemplate).convertAndSendToUser(
+                    eq("bob@test.com"),
+                    eq("/queue/chat-invites"),
+                    argThat(payload -> payload instanceof java.util.Map<?, ?> map
+                            && "CHAT_INVITE_CREATED".equals(map.get("event"))
+                            && Long.valueOf(55L).equals(map.get("invitationId"))));
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+            TransactionSynchronizationManager.setActualTransactionActive(false);
+        }
     }
 
     @Test
