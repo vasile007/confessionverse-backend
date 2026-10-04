@@ -6,6 +6,7 @@ import com.confessionverse.backend.model.User;
 import com.confessionverse.backend.repository.ChatRoomRepository;
 import com.confessionverse.backend.repository.UserRepository;
 import com.confessionverse.backend.security.JwtUtil;
+import com.confessionverse.backend.service.RandomChatMatchmakingService;
 import lombok.Data;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -31,6 +32,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 public class WebSocketIntegrationTest {
@@ -46,6 +48,9 @@ public class WebSocketIntegrationTest {
 
     @Autowired
     private ChatRoomRepository chatRoomRepository;
+
+    @Autowired
+    private RandomChatMatchmakingService randomChatMatchmakingService;
 
     @Test
     public void testSendAndReceiveMessage() throws Exception {
@@ -76,7 +81,7 @@ public class WebSocketIntegrationTest {
         stompClient.setMessageConverter(new MappingJackson2MessageConverter());
         stompClient.setTaskScheduler(new ConcurrentTaskScheduler());
 
-        BlockingQueue<String> blockingQueue = new LinkedBlockingQueue<>();
+        BlockingQueue<Map<String, Object>> blockingQueue = new LinkedBlockingQueue<>();
 
         StompHeaders connectHeaders = new StompHeaders();
         connectHeaders.add("Authorization", "Bearer " + jwtToken);
@@ -94,10 +99,7 @@ public class WebSocketIntegrationTest {
                     public void handleFrame(StompHeaders headers, Object payload) {
                         @SuppressWarnings("unchecked")
                         Map<String, Object> message = (Map<String, Object>) payload;
-                        Object content = message.get("content");
-                        if (content instanceof String contentText) {
-                            blockingQueue.offer(contentText);
-                        }
+                        blockingQueue.offer(message);
                     }
                 });
 
@@ -119,9 +121,102 @@ public class WebSocketIntegrationTest {
         );
 
         future.get(5, TimeUnit.SECONDS);
-        String received = blockingQueue.poll(10, TimeUnit.SECONDS);
+        Map<String, Object> received = blockingQueue.poll(10, TimeUnit.SECONDS);
 
-        assertTrue(received != null && received.contains("Salut test!"), "Mesajul nu a fost primit corect.");
+        assertTrue(received != null, "Mesajul nu a fost primit corect.");
+        assertEquals("Salut test!", received.get("content"));
+        assertEquals(savedSender.getId().intValue(), ((Number) received.get("senderId")).intValue());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> senderPayload = (Map<String, Object>) received.get("sender");
+        assertEquals(savedSender.getUsername(), senderPayload.get("username"));
+        assertTrue(!senderPayload.containsKey("email"), "WebSocket sender payload must not expose email");
+    }
+
+    @Test
+    public void randomRoomMessageIsDeliveredToSenderAndOtherMember() throws Exception {
+        User first = saveUser("ws-random-first@confessionverse.local", "ws-random-first");
+        User second = saveUser("ws-random-second@confessionverse.local", "ws-random-second");
+        Long firstRoomId = randomChatMatchmakingService.join(first).getChatRoom().getId();
+        Long secondRoomId = randomChatMatchmakingService.join(second).getChatRoom().getId();
+        assertEquals(firstRoomId, secondRoomId);
+
+        WebSocketStompClient firstClient = stompClient();
+        WebSocketStompClient secondClient = stompClient();
+        BlockingQueue<Map<String, Object>> firstMessages = new LinkedBlockingQueue<>();
+        BlockingQueue<Map<String, Object>> secondMessages = new LinkedBlockingQueue<>();
+        StompSession firstSession = connectAndSubscribe(firstClient, first, firstMessages);
+        StompSession secondSession = connectAndSubscribe(secondClient, second, secondMessages);
+
+        firstSession.send("/app/chat.send", new ChatMessage(firstRoomId.toString(), first.getUsername(), "random hello"));
+
+        assertRandomMessage(firstMessages.poll(10, TimeUnit.SECONDS), firstRoomId, first, "random hello");
+        assertRandomMessage(secondMessages.poll(10, TimeUnit.SECONDS), firstRoomId, first, "random hello");
+        firstSession.disconnect();
+        secondSession.disconnect();
+        firstClient.stop();
+        secondClient.stop();
+    }
+
+    private User saveUser(String email, String username) {
+        return userRepository.findByEmail(email).orElseGet(() -> {
+            User user = new User();
+            user.setEmail(email);
+            user.setUsername(username);
+            user.setPasswordHash("test-hash");
+            user.setRole(Role.USER);
+            return userRepository.save(user);
+        });
+    }
+
+    private WebSocketStompClient stompClient() {
+        WebSocketStompClient client = new WebSocketStompClient(new StandardWebSocketClient());
+        client.setMessageConverter(new MappingJackson2MessageConverter());
+        client.setTaskScheduler(new ConcurrentTaskScheduler());
+        return client;
+    }
+
+    private StompSession connectAndSubscribe(WebSocketStompClient client,
+                                             User user,
+                                             BlockingQueue<Map<String, Object>> messages) throws Exception {
+        String token = jwtUtil.generateToken(user.getEmail(), user.getEmail(), user.getRole().name());
+        StompHeaders connectHeaders = new StompHeaders();
+        connectHeaders.add("Authorization", "Bearer " + token);
+        CompletableFuture<Void> subscribed = new CompletableFuture<>();
+        StompSession session = client.connectAsync(
+                "ws://localhost:" + port + "/ws",
+                new WebSocketHttpHeaders(),
+                connectHeaders,
+                new StompSessionHandlerAdapter() {
+                    @Override
+                    public void afterConnected(StompSession session, StompHeaders connectedHeaders) {
+                        session.subscribe("/user/queue/messages", new StompFrameHandler() {
+                            @Override
+                            public Type getPayloadType(StompHeaders headers) {
+                                return Map.class;
+                            }
+
+                            @Override
+                            public void handleFrame(StompHeaders headers, Object payload) {
+                                @SuppressWarnings("unchecked")
+                                Map<String, Object> message = (Map<String, Object>) payload;
+                                messages.offer(message);
+                            }
+                        });
+                        subscribed.complete(null);
+                    }
+                }).get(5, TimeUnit.SECONDS);
+        subscribed.get(5, TimeUnit.SECONDS);
+        return session;
+    }
+
+    private void assertRandomMessage(Map<String, Object> message,
+                                     Long roomId,
+                                     User sender,
+                                     String content) {
+        assertTrue(message != null, "Random message was not delivered");
+        assertEquals(content, message.get("content"));
+        assertEquals(roomId.longValue(), ((Number) message.get("chatRoomId")).longValue());
+        assertEquals(sender.getId().longValue(), ((Number) message.get("senderId")).longValue());
     }
 
     @Data

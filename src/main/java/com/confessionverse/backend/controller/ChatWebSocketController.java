@@ -14,12 +14,15 @@ import com.confessionverse.backend.repository.UserRepository;
 import com.confessionverse.backend.service.ChatRoomService;
 import com.confessionverse.backend.service.FreePlanLimitService;
 import org.springframework.messaging.handler.annotation.MessageMapping;
+import org.springframework.messaging.handler.annotation.MessageExceptionHandler;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.messaging.simp.annotation.SendToUser;
 import org.springframework.stereotype.Controller;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.security.Principal;
 import java.time.LocalDateTime;
+import java.util.Map;
 
 @Controller
 public class ChatWebSocketController {
@@ -113,13 +116,18 @@ public class ChatWebSocketController {
 
         Message message = ChatMessageMapper.toEntity(dto, sender, chatRoom);
         message.setTimestamp(LocalDateTime.now());
-        messageRepository.save(message);
+        Message saved = messageRepository.save(message);
+        var response = messageMapper.toResponseDTO(saved);
 
-        dto.setSender(sender.getUsername());
-        dto.setChatRoomId(chatRoom.getId().toString());
-        dto.setTimestamp(message.getTimestamp().toString());
+        messagingTemplate.convertAndSendToUser(senderEmail, "/queue/messages", response);
+        messagingTemplate.convertAndSendToUser(receiver.getEmail(), "/queue/messages", response);
+    }
 
-        messagingTemplate.convertAndSendToUser(senderEmail, "/queue/messages", dto);
-        messagingTemplate.convertAndSendToUser(receiver.getEmail(), "/queue/messages", dto);
+    @MessageExceptionHandler({IllegalArgumentException.class, SecurityException.class, ResourceNotFoundException.class})
+    @SendToUser(destinations = "/queue/chat-errors", broadcast = false)
+    public Map<String, String> handleChatMessageError(Exception exception) {
+        return Map.of("error", exception.getMessage() != null
+                ? exception.getMessage()
+                : "The chat action could not be completed.");
     }
 }

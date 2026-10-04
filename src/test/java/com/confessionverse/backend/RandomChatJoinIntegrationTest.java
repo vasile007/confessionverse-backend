@@ -152,6 +152,28 @@ class RandomChatJoinIntegrationTest {
     }
 
     @Test
+    void historicalRandomMessagesIncludeAnonymousSenderWithoutEmail() throws Exception {
+        User sender = createUser("message-sender");
+        Long roomId = matchmakingService.join(sender).getChatRoom().getId();
+
+        mockMvc.perform(post("/api/messages")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"chatRoomId\":" + roomId + ",\"content\":\"hello group\"}")
+                        .header("Authorization", "Bearer " + tokenFor(sender)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.senderId").value(sender.getId()))
+                .andExpect(jsonPath("$.sender.username").value(sender.getUsername()))
+                .andExpect(jsonPath("$.sender.email").doesNotExist());
+
+        mockMvc.perform(get("/api/messages/chatroom/{roomId}", roomId)
+                        .header("Authorization", "Bearer " + tokenFor(sender)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].senderId").value(sender.getId()))
+                .andExpect(jsonPath("$.content[0].sender.username").value(sender.getUsername()))
+                .andExpect(jsonPath("$.content[0].sender.email").doesNotExist());
+    }
+
+    @Test
     void randomJoinRequiresAuthentication() throws Exception {
         mockMvc.perform(post("/api/chatrooms/random-join")
                         .contentType(MediaType.APPLICATION_JSON)

@@ -8,6 +8,8 @@ import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.ChannelInterceptor;
+import org.springframework.messaging.support.MessageHeaderAccessor;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -25,7 +27,13 @@ public class WebSocketAuthInterceptor implements ChannelInterceptor {
 
     @Override
     public Message<?> preSend(Message<?> message, MessageChannel channel) {
-        StompHeaderAccessor accessor = StompHeaderAccessor.wrap(message);
+        // Use the accessor attached to the inbound message. StompHeaderAccessor.wrap(message)
+        // creates a new accessor; setting its user and returning the original message loses the
+        // authenticated Principal before Spring stores it on the WebSocket session.
+        StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
+        if (accessor == null) {
+            return message;
+        }
         StompCommand command = accessor.getCommand();
 
         if (command == null) {
@@ -35,12 +43,12 @@ public class WebSocketAuthInterceptor implements ChannelInterceptor {
         if (command == StompCommand.CONNECT) {
             String token = getAuthorizationHeader(accessor);
             if (token == null || !token.startsWith("Bearer ")) {
-                return null;
+                throw new AccessDeniedException("Missing WebSocket bearer token");
             }
 
             token = token.substring(7); // remove the "Bearer " prefix
             if (!jwtUtil.validateToken(token)) {
-                return null;
+                throw new AccessDeniedException("Invalid WebSocket bearer token");
             }
 
             try {
@@ -55,14 +63,13 @@ public class WebSocketAuthInterceptor implements ChannelInterceptor {
                 Authentication auth = new UsernamePasswordAuthenticationToken(email, null, authorities);
                 accessor.setUser(auth);
             } catch (Exception e) {
-                System.out.println("JWT invalid in WebSocket: " + e.getMessage());
-                return null;
+                throw new AccessDeniedException("Invalid WebSocket authentication", e);
             }
         }
 
         if ((command == StompCommand.SEND || command == StompCommand.SUBSCRIBE)
                 && accessor.getUser() == null) {
-            return null;
+            throw new AccessDeniedException("WebSocket session is not authenticated");
         }
 
         return message;
@@ -91,7 +98,6 @@ public class WebSocketAuthInterceptor implements ChannelInterceptor {
         return null;
     }
 }
-
 
 
 
