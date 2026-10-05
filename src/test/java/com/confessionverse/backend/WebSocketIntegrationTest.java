@@ -6,6 +6,7 @@ import com.confessionverse.backend.model.User;
 import com.confessionverse.backend.repository.ChatRoomRepository;
 import com.confessionverse.backend.repository.UserRepository;
 import com.confessionverse.backend.security.JwtUtil;
+import com.confessionverse.backend.service.ChatInvitationService;
 import com.confessionverse.backend.service.RandomChatMatchmakingService;
 import lombok.Data;
 import org.junit.jupiter.api.Test;
@@ -25,6 +26,7 @@ import org.springframework.web.socket.messaging.WebSocketStompClient;
 
 import java.lang.reflect.Type;
 import java.util.Map;
+import java.util.HashMap;
 import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
@@ -51,6 +53,9 @@ public class WebSocketIntegrationTest {
 
     @Autowired
     private RandomChatMatchmakingService randomChatMatchmakingService;
+
+    @Autowired
+    private ChatInvitationService chatInvitationService;
 
     @Test
     public void testSendAndReceiveMessage() throws Exception {
@@ -157,6 +162,53 @@ public class WebSocketIntegrationTest {
         secondClient.stop();
     }
 
+    @Test
+    public void privateInviteAcceptAndDirectMessagesAreDeliveredRealtime() throws Exception {
+        User inviter = saveUser("ws-private-inviter@confessionverse.local", "ws-private-inviter");
+        User invitee = saveUser("ws-private-invitee@confessionverse.local", "ws-private-invitee");
+        WebSocketStompClient inviterClient = stompClient();
+        WebSocketStompClient inviteeClient = stompClient();
+        BlockingQueue<Map<String, Object>> inviterRooms = new LinkedBlockingQueue<>();
+        BlockingQueue<Map<String, Object>> inviteeRooms = new LinkedBlockingQueue<>();
+        BlockingQueue<Map<String, Object>> inviteeInvites = new LinkedBlockingQueue<>();
+        BlockingQueue<Map<String, Object>> inviterMessages = new LinkedBlockingQueue<>();
+        BlockingQueue<Map<String, Object>> inviteeMessages = new LinkedBlockingQueue<>();
+
+        Map<String, BlockingQueue<Map<String, Object>>> inviterQueues = new HashMap<>();
+        inviterQueues.put("/user/queue/chatrooms", inviterRooms);
+        inviterQueues.put("/user/queue/messages", inviterMessages);
+        Map<String, BlockingQueue<Map<String, Object>>> inviteeQueues = new HashMap<>();
+        inviteeQueues.put("/user/queue/chat-invites", inviteeInvites);
+        inviteeQueues.put("/user/queue/chatrooms", inviteeRooms);
+        inviteeQueues.put("/user/queue/messages", inviteeMessages);
+
+        StompSession inviterSession = connectAndSubscribe(inviterClient, inviter, inviterQueues);
+        StompSession inviteeSession = connectAndSubscribe(inviteeClient, invitee, inviteeQueues);
+        var request = chatInvitationService.requestPrivateConversation(inviter.getEmail(), invitee.getUsername());
+
+        Map<String, Object> inviteEvent = inviteeInvites.poll(10, TimeUnit.SECONDS);
+        assertTrue(inviteEvent != null, "Invitee did not receive the private request event");
+        assertEquals("CHAT_INVITE_CREATED", inviteEvent.get("event"));
+        assertEquals(request.getInviteId().longValue(), ((Number) inviteEvent.get("invitationId")).longValue());
+
+        var accepted = chatInvitationService.acceptInvitation(request.getInviteId(), invitee.getEmail());
+        Long roomId = accepted.getChatRoomId();
+        assertRoomRefresh(inviterRooms.poll(10, TimeUnit.SECONDS), roomId);
+        assertRoomRefresh(inviteeRooms.poll(10, TimeUnit.SECONDS), roomId);
+
+        inviterSession.send("/app/chat.send", new ChatMessage(roomId.toString(), inviter.getUsername(), "private hello"));
+        assertRandomMessage(inviterMessages.poll(10, TimeUnit.SECONDS), roomId, inviter, "private hello");
+        assertRandomMessage(inviteeMessages.poll(10, TimeUnit.SECONDS), roomId, inviter, "private hello");
+        inviteeSession.send("/app/chat.send", new ChatMessage(roomId.toString(), invitee.getUsername(), "private reply"));
+        assertRandomMessage(inviterMessages.poll(10, TimeUnit.SECONDS), roomId, invitee, "private reply");
+        assertRandomMessage(inviteeMessages.poll(10, TimeUnit.SECONDS), roomId, invitee, "private reply");
+
+        inviterSession.disconnect();
+        inviteeSession.disconnect();
+        inviterClient.stop();
+        inviteeClient.stop();
+    }
+
     private User saveUser(String email, String username) {
         return userRepository.findByEmail(email).orElseGet(() -> {
             User user = new User();
@@ -178,6 +230,12 @@ public class WebSocketIntegrationTest {
     private StompSession connectAndSubscribe(WebSocketStompClient client,
                                              User user,
                                              BlockingQueue<Map<String, Object>> messages) throws Exception {
+        return connectAndSubscribe(client, user, Map.of("/user/queue/messages", messages));
+    }
+
+    private StompSession connectAndSubscribe(WebSocketStompClient client,
+                                             User user,
+                                             Map<String, BlockingQueue<Map<String, Object>>> subscriptions) throws Exception {
         String token = jwtUtil.generateToken(user.getEmail(), user.getEmail(), user.getRole().name());
         StompHeaders connectHeaders = new StompHeaders();
         connectHeaders.add("Authorization", "Bearer " + token);
@@ -189,24 +247,30 @@ public class WebSocketIntegrationTest {
                 new StompSessionHandlerAdapter() {
                     @Override
                     public void afterConnected(StompSession session, StompHeaders connectedHeaders) {
-                        session.subscribe("/user/queue/messages", new StompFrameHandler() {
-                            @Override
-                            public Type getPayloadType(StompHeaders headers) {
-                                return Map.class;
-                            }
+                        subscriptions.forEach((destination, queue) -> session.subscribe(destination, new StompFrameHandler() {
+                                @Override
+                                public Type getPayloadType(StompHeaders headers) {
+                                    return Map.class;
+                                }
 
-                            @Override
-                            public void handleFrame(StompHeaders headers, Object payload) {
-                                @SuppressWarnings("unchecked")
-                                Map<String, Object> message = (Map<String, Object>) payload;
-                                messages.offer(message);
-                            }
-                        });
+                                @Override
+                                public void handleFrame(StompHeaders headers, Object payload) {
+                                    @SuppressWarnings("unchecked")
+                                    Map<String, Object> message = (Map<String, Object>) payload;
+                                    queue.offer(message);
+                                }
+                            }));
                         subscribed.complete(null);
                     }
                 }).get(5, TimeUnit.SECONDS);
         subscribed.get(5, TimeUnit.SECONDS);
         return session;
+    }
+
+    private void assertRoomRefresh(Map<String, Object> event, Long roomId) {
+        assertTrue(event != null, "Participant did not receive the room refresh event");
+        assertEquals("CHATROOM_REFRESH", event.get("event"));
+        assertEquals(roomId.longValue(), ((Number) event.get("chatRoomId")).longValue());
     }
 
     private void assertRandomMessage(Map<String, Object> message,
